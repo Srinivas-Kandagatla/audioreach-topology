@@ -21,7 +21,7 @@ STREAM_SG_PCM_ADD(audioreach/subgraph-stream-vol-playback.m4, FRONTEND_DAI_MULTI
 dnl
 dnl Capture MultiMedia2
 STREAM_SG_PCM_ADD(audioreach/subgraph-stream-capture.m4, FRONTEND_DAI_MULTIMEDIA2,
-        `S16_LE', 48000, 48000, 1, 1,
+        `S16_LE', 48000, 48000, 1, 2,
         0x00004003, 0x00004003, 0x00006020,  `110000')
 dnl
 #
