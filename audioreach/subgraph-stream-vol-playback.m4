@@ -10,6 +10,7 @@ include(`audioreach/module_mfc.m4') dnl
 include(`audioreach/module_pcmcnv.m4') dnl
 include(`audioreach/module_vol_ctrl.m4') dnl
 include(`audioreach/module_log.m4') dnl
+include(`audioreach/module_pull.m4') dnl
 include(`util/mixer.m4') dnl
 dnl
 # SubGraph  for PCM Playback
@@ -35,7 +36,7 @@ define(`CONT_POSITION', APM_CONT_GRAPH_POS_STREAM) dnl'
 define(`PCM_DOMAIN_ID', APM_PROC_DOMAIN_ID_ADSP) dnl'
 define(`CONT_STACK_SIZE', 8192) dnl'
 
-define(`WRSH_MODULE_IID', MOD_IID_START) dnl
+define(`SHMEM_PULL_MODULE_IID', MOD_IID_START) dnl
 define(`PCMDEC_MODULE_IID', eval(MOD_IID_START + 1)) dnl
 define(`PCMCNV_MODULE_IID', eval(MOD_IID_START + 2)) dnl
 define(`VOLCTRL_MODULE_IID', eval(MOD_IID_START + 3)) dnl
@@ -52,7 +53,7 @@ define(`STREAM_PLAYBACK_ROUTE',
 `SectionGraph."NAME_PREFIX.$2 Graph" {'
 `        index STR($2)'
 `        lines ['
-`                "NAME_PREFIX.pcm_decoder$2, , NAME_PREFIX.wrsh_ep$2"'
+`                "NAME_PREFIX.pcm_decoder$2, , NAME_PREFIX.shmem_pull$2"'
 `                "NAME_PREFIX.pcm_converter$2, , NAME_PREFIX.pcm_decoder$2"'
 `                "NAME_PREFIX.vol_ctrl$1, , NAME_PREFIX.pcm_converter$2"'
 `                "NAME_PREFIX.mfc$2, , NAME_PREFIX.vol_ctrl$1"'
@@ -67,7 +68,7 @@ AR_SUBGRAPH(SG_INDEX, PCM_DAI_ID, SG_IID_START, PCM_PERF_MODE, PCM_DIRECTION, CO
 
 AR_CONTAINER(CONTAINER_INDEX, CONT_IID_START, CONT_CAP, CONT_STACK_SIZE, APM_CONT_GRAPH_POS_STREAM, APM_PROC_DOMAIN_ID_ADSP)
 
-AR_MODULE_WRSH(MOD_INDEX, SG_INDEX, CONTAINER_INDEX,	WRSH_MODULE_IID,  0, 1, 1, 2, PCM_DAI_ID, PCMDEC_MODULE_IID)
+AR_MODULE_SHMEM_PULL(MOD_INDEX, SG_INDEX, CONTAINER_INDEX,	SHMEM_PULL_MODULE_IID,  0, 1, 1, 2, PCM_DAI_ID, PCMDEC_MODULE_IID)
 AR_MODULE_PCMDEC(MOD_INDEX, SG_INDEX, CONTAINER_INDEX,	PCMDEC_MODULE_IID, 1, 1, 1, 2, PCM_INTERLEAVED,PCMCNV_MODULE_IID)
 AR_MODULE_PCMCNV(MOD_INDEX, SG_INDEX, CONTAINER_INDEX,	PCMCNV_MODULE_IID, 1, 1, 1, 2, PCM_DEINTERLEAVED_UNPACKED,VOLCTRL_MODULE_IID)
 AR_MODULE_VOL_CTRL(PCM_DAI_ID, SG_INDEX, CONTAINER_INDEX, VOLCTRL_MODULE_IID,1, 1, 1, 2,MFC_MODULE_IID)

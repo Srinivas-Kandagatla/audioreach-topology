@@ -4,7 +4,7 @@ include(`audioreach/audioreach.m4') dnl
 include(`util/pcm.m4') dnl
 include(`audioreach/subgraph.m4') dnl
 include(`audioreach/container.m4') dnl
-include(`audioreach/module_rdsh.m4') dnl
+include(`audioreach/module_push.m4') dnl
 include(`audioreach/module_pcmenc.m4') dnl
 include(`audioreach/module_mfc.m4') dnl
 include(`audioreach/module_pcmcnv.m4') dnl
@@ -39,7 +39,7 @@ define(`LOG_MODULE_IID', MOD_IID_START) dnl
 define(`MFC_MODULE_IID', eval(MOD_IID_START + 1)) dnl
 define(`PCMCNV_MODULE_IID', eval(MOD_IID_START + 2)) dnl
 define(`PCMENC_MODULE_IID', eval(MOD_IID_START + 3)) dnl
-define(`RDSH_MODULE_IID', eval(MOD_IID_START + 4)) dnl
+define(`SHMEM_PUSH_MODULE_IID', eval(MOD_IID_START + 4)) dnl
 define(`SG_INDEX', 1) dnl
 define(`CONTAINER_INDEX', 1) dnl
 define(`MOD_INDEX', 1) dnl
@@ -54,7 +54,7 @@ define(`STREAM_CAPTURE_ROUTE',
 `                "NAME_PREFIX.mfc$1, , NAME_PREFIX.logger$1"'
 `                "NAME_PREFIX.pcm_converter$1, , NAME_PREFIX.mfc$1"'
 `                "NAME_PREFIX.pcm_encoder$1, , NAME_PREFIX.pcm_converter$1"'
-`                "NAME_PREFIX.rdsh_ep$1, , NAME_PREFIX.pcm_encoder$1"'
+`                "NAME_PREFIX.shmem_push$1, , NAME_PREFIX.pcm_encoder$1"'
 `        ]'
 `}')
 dnl AR_PCM_CAPTURE(index, formats, rate_min, rate_max, ch_min, ch_max)
@@ -69,7 +69,7 @@ dnl               log-code, log-tap-point, log-mode, dst-iid)
 AR_MODULE_LOG(MOD_INDEX,    SG_INDEX, CONTAINER_INDEX, LOG_MODULE_IID,    1, 1, 1, 2, 0x000019af, 1, 0,MFC_MODULE_IID)
 AR_MODULE_MFC(MOD_INDEX, SG_INDEX, CONTAINER_INDEX, MFC_MODULE_IID, 1, 1, 1, 2, PCMCNV_MODULE_IID)
 AR_MODULE_PCMCNV(MOD_INDEX, SG_INDEX, CONTAINER_INDEX, PCMCNV_MODULE_IID, 1, 1, 1, 2, PCM_INTERLEAVED, PCMENC_MODULE_IID)
-AR_MODULE_PCMENC(MOD_INDEX, SG_INDEX, CONTAINER_INDEX, PCMENC_MODULE_IID, 1, 1, 1, 2, PCM_INTERLEAVED, RDSH_MODULE_IID)
-AR_MODULE_RDSH(MOD_INDEX,   SG_INDEX, CONTAINER_INDEX, RDSH_MODULE_IID,   1, 0, 1, 0, PCM_DAI_ID, NONE_IID)
+AR_MODULE_PCMENC(MOD_INDEX, SG_INDEX, CONTAINER_INDEX, PCMENC_MODULE_IID, 1, 1, 1, 2, PCM_INTERLEAVED, SHMEM_PUSH_MODULE_IID)
+AR_MODULE_SHMEM_PUSH(MOD_INDEX,   SG_INDEX, CONTAINER_INDEX, SHMEM_PUSH_MODULE_IID,   1, 0, 1, 0, PCM_DAI_ID, NONE_IID)
 
 STREAM_CAPTURE_ROUTE(MOD_INDEX, PCM_DAI_ID)
