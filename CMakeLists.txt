@@ -27,6 +27,7 @@ set(TPLGS
 	"Google-SC7180-WSA-Speakers-SEC-I2S-VA-DMIC-WCD-TX3\;Google-SC7180-WSA-Speakers-SEC-I2S-VA-DMIC-WCD-TX3\;qcom/sc7180\;"
 	"X1E80100-CRD\;X1E80100-CRD\;qcom/x1e80100\;"
 	"X1E80100-CRD\;X1E80100-EVK\;qcom/x1e80100\;"
+	"Lenovo-ThinkPad-T14s-Gen-7\;Lenovo-ThinkPad-T14s-Gen-7\;qcom/glymur\;"
 	"GLYMUR-CRD\;GLYMUR-CRD\;qcom/glymur\;"
 	"GLYMUR-ASUS-Zenbook-A14-UX3407NA\;GLYMUR-ASUS-Zenbook-A14-UX3407NA\;qcom/glymur/ASUSTeK/UX3407NA\;"
 	"GLYMUR-ASUS-Zenbook-A16-UX3607OA\;GLYMUR-ASUS-Zenbook-A16-UX3607OA\;qcom/glymur/ASUSTeK/UX3607OA\;"
