@@ -129,3 +129,52 @@ define(`STREAM_MASTER_PLAYBACK_VOLUME_CTRL',
 `	}'
 `	tlv "master_playback_vol_ctrl_tlv"'
 `}')
+dnl
+dnl SPEAKER_PROTECTION_OPERATION_MODE_CTRL()
+define(`SPEAKER_PROTECTION_OPERATION_MODE_CTRL',
+`'
+`SectionText."sp_operation_mode_text" {'
+`	values ['
+`		"Normal"'
+`		"Calibration"'
+`	]'
+`}'
+`SectionControlEnum."Speaker Protection Operation Mode" {'
+`	texts "sp_operation_mode_text"'
+`'
+`	# control belongs to this index group'
+`	index "1"'
+`'
+`	# control uses bespoke driver get/put/info ID SND_SOC_AR_TPLG_SP_OP_MODE_CTL'
+`	ops."ctl" {'
+`		info "enum"'
+`		get "SND_SOC_AR_TPLG_SP_OP_MODE_CTL"'
+`		put "SND_SOC_AR_TPLG_SP_OP_MODE_CTL"'
+`	}'
+`}')
+dnl
+dnl SPEAKER_PROTECTION_R0T0_CTRL()
+dnl
+dnl Carries the VI calibration result for every speaker: R0 (DC resistance) and
+dnl T0 (the temperature R0 was measured at), interleaved per speaker, both in the
+dnl DSP's own fixed-point format -- R0 in Q24 ohms, T0 in Q6 degrees Celsius.
+dnl
+define(`SPEAKER_PROTECTION_R0T0_CTRL',
+`'
+`SectionControlMixer."Speaker Protection R0T0" {'
+`	Comment "VI calibration R0 (Q24 ohms) and T0 (Q6 degC) per speaker"'
+`'
+`	# control belongs to this index group'
+`	index "1"'
+`'
+`	# Element count and range are supplied by the driver info handler'
+`	max "1"'
+`	invert "false"'
+`'
+`	# control uses bespoke driver get/put/info ID SND_SOC_AR_TPLG_SP_R0T0_CTL'
+`	ops."ctl" {'
+`		info "SND_SOC_AR_TPLG_SP_R0T0_CTL"'
+`		get "SND_SOC_AR_TPLG_SP_R0T0_CTL"'
+`		put "SND_SOC_AR_TPLG_SP_R0T0_CTL"'
+`	}'
+`}')
