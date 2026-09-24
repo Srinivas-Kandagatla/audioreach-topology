@@ -162,6 +162,8 @@ define(`MODULE_ID_MFC', `0x07001015') dnl
 define(`MODULE_ID_VOL_CTRL', `0x0700101B') dnl
 define(`MODULE_ID_SMECNS_V2', `0x07001031') dnl
 define(`MODULE_ID_DISPLAY_PORT_SINK', `0x07001069') dnl
+define(`MODULE_ID_SPEAKER_PROTECTION', `0x070010E2') dnl
+define(`MODULE_ID_SPEAKER_PROTECTION_VI', `0x070010E3') dnl
 dnl Linux frontend dai ids
 define(`FRONTEND_DAI_MULTIMEDIA1', `0') dnl
 define(`FRONTEND_DAI_MULTIMEDIA2', `1') dnl
@@ -378,4 +380,6 @@ define(`AIF_TDM_RX_12', `203') dnl
 define(`AIF_TDM_TX_12', `204') dnl
 define(`SND_SOC_AR_TPLG_FE_BE_GRAPH_CTL_MIX', `256') dnl
 define(`SND_SOC_AR_TPLG_VOL_CTL', `257') dnl
+define(`SND_SOC_AR_TPLG_SP_OP_MODE_CTL', `258') dnl
+define(`SND_SOC_AR_TPLG_SP_R0T0_CTL', `259') dnl
 define(`NONE_IID', `0x0') dnl
