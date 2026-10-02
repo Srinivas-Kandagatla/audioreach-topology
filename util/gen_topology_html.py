@@ -221,12 +221,32 @@ def extract(sections: dict) -> dict:
                 dst, label, src = parts[0], parts[1], parts[2]
                 data['routes'].append((src, label, dst))
 
-    # Controls
-    for name, c in sections.get('SectionControlMixer', {}).items():
+    # Controls — compose the full kcontrol name as "<mixer-widget> <switch>".
+    # One SectionControlMixer definition can be shared by multiple mixer
+    # widgets (e.g. a single `MultiMedia1` switch is reused by every playback
+    # mixer that routes MM1), so iterate over mixer widgets to emit a row per
+    # kcontrol instance. Standalone controls not attached to any mixer widget
+    # (e.g. SP R0T0) are emitted once with their declared name.
+    control_mixer_defs = sections.get('SectionControlMixer', {})
+    attached_switches = set()
+    for wn, w in sections.get('SectionWidget', {}).items():
+        if w.get('type') != 'mixer':
+            continue
+        for sw in w.get('mixer', []):
+            attached_switches.add(sw)
+            c = control_mixer_defs.get(sw, {})
+            ctl = c.get('ops', {}).get('ctl', {})
+            data['controls_mixer'].append(
+                (f'{wn} {sw}', ctl.get('info', ''), ctl.get('get', ''))
+            )
+    for name, c in control_mixer_defs.items():
+        if name in attached_switches:
+            continue
         ctl = c.get('ops', {}).get('ctl', {})
         data['controls_mixer'].append(
             (name, ctl.get('info', ''), ctl.get('get', ''))
         )
+
     for name, c in sections.get('SectionControlEnum', {}).items():
         txts_ref = c.get('texts', '')
         texts = sections.get('SectionText', {}).get(txts_ref, {}).get('values', [])
@@ -387,8 +407,8 @@ def svg_high_level(d: dict, title: str) -> str:
     GROUP_H_GAP = 40        # horizontal gap between groups in a row
     GROUP_V_GAP = 56        # vertical gap between rows (and pb/cap bands)
     MAX_WIDTH = 1400        # wrap into a new row once width would exceed this
-    H_small = 50
-    H_tall = 92
+    H_small = 60
+    H_tall = 96
     ROW_GAP = 20
 
     EDGE = '#5a5a5a'
@@ -397,6 +417,8 @@ def svg_high_level(d: dict, title: str) -> str:
     ACCENT = '#2d6cdf'
     ACCENT_BG = '#eef4ff'
     ACCENT2 = '#c33a2b'
+    FE_BG = '#f0f3f8'       # neutral light-blue fill for FE PCM boxes
+    BE_BG = '#f6f3ec'       # neutral light-cream fill for BE DAI boxes
 
     # Pre-compute per-group lane counts and widths
     def gw(g):
@@ -427,10 +449,11 @@ def svg_high_level(d: dict, title: str) -> str:
     width = max(760, 2 * MARGIN + used_cols * cell_w + (used_cols - 1) * GROUP_H_GAP)
     height = 72 + (pb_rows + cap_rows) * (group_h + GROUP_V_GAP) + 20
 
-    def rect(cx, cy, w, h, accent=False):
+    def rect(cx, cy, w, h, accent=False, fill=None):
+        f = fill if fill is not None else (ACCENT_BG if accent else 'none')
         return (
             f'<rect x="{cx - w // 2}" y="{cy - h // 2}" width="{w}" height="{h}" '
-            f'rx="8" fill="{ACCENT_BG if accent else "none"}" '
+            f'rx="8" fill="{f}" '
             f'stroke="{ACCENT if accent else EDGE}" '
             f'stroke-width="{2 if accent else 1.25}"/>'
         )
@@ -459,6 +482,38 @@ def svg_high_level(d: dict, title: str) -> str:
         return [n.rsplit('.', 1)[-1]
                 for n in d['subgraphs'].get(sg, [])
                 if d['widgets'][n]['type'] not in ('aif_in', 'aif_out', 'mixer')]
+
+    def wrap_arrows(mods, max_chars):
+        """Pack ' -> ' joined names into lines, each at most max_chars wide."""
+        if not mods:
+            return ['—']
+        sep = ' → '
+        lines = []
+        cur = ''
+        for m in mods:
+            piece = m if not cur else sep + m
+            if cur and len(cur) + len(piece) > max_chars:
+                lines.append(cur)
+                cur = m
+            else:
+                cur += piece
+        if cur:
+            lines.append(cur)
+        return lines
+
+    def shorten_rate(r_min, r_max):
+        """48000 -> '48 kHz'; '8000-48000' -> '8–48 kHz'."""
+        if not r_min:
+            return ''
+        def k(v):
+            try:
+                v = int(v)
+            except ValueError:
+                return str(v)
+            return f'{v // 1000}' if v % 1000 == 0 else f'{v / 1000:g}'
+        if r_min == r_max:
+            return f'{k(r_min)} kHz'
+        return f'{k(r_min)}–{k(r_max)} kHz'
 
     out = []
     out.append(
@@ -504,33 +559,64 @@ def svg_high_level(d: dict, title: str) -> str:
         fe_box_w = fe_step - LANE_GAP
         dev_box_w = dev_step - LANE_GAP
 
-        # FE row
+        # pixel-per-char estimates for the two font sizes used in boxes
+        px_name = 7.0   # 13 pt bold
+        px_meta = 6.0   # 11 pt regular
+
+        def mc(box_w, px):
+            return max(8, int((box_w - 20) / px))
+
+        def wrap_text(s, max_chars):
+            if not s:
+                return ['']
+            lines, cur = [], ''
+            for w in s.split():
+                piece = w if not cur else ' ' + w
+                if cur and len(cur) + len(piece) > max_chars:
+                    lines.append(cur); cur = w
+                else:
+                    cur += piece
+            if cur:
+                lines.append(cur)
+            return lines
+
+        def multi(cx, y0, lines, size=11, color=QUIET, weight=400, line_h=14):
+            for i, ln in enumerate(lines):
+                out.append(label(cx, y0 + i * line_h, ln,
+                                 size=size, color=color, weight=weight))
+
+        # FE row (fill tint distinguishes FE from BE)
         for i, fe in enumerate(g['fes']):
             cx = fe_xs[i]
-            out.append(rect(cx, y_fe, fe_box_w, H_small))
-            out.append(label(cx, y_fe - 2, fe['fe'], weight=600))
+            out.append(rect(cx, y_fe, fe_box_w, H_small, fill=FE_BG))
+            # Name on top (wrap if box narrow)
+            name_lines = wrap_text(fe['fe'], mc(fe_box_w, px_name))
+            multi(cx, y_fe - 6, name_lines, size=13, color=INK, weight=600)
             caps = fe['caps']
             fmt = caps.get('formats', '')
-            rmin = caps.get('rate_min', '')
-            rmax = caps.get('rate_max', '')
+            rate_s = shorten_rate(caps.get('rate_min', ''), caps.get('rate_max', ''))
             cmin = caps.get('channels_min', '')
             cmax = caps.get('channels_max', '')
-            rate = rmin if rmin == rmax else f'{rmin}–{rmax}'
             ch = cmin if cmin == cmax else f'{cmin}–{cmax}'
-            meta = ' · '.join(b for b in (fmt, f'{rate} Hz' if rate else '',
-                                          f'{ch} ch' if ch else '', direction) if b)
-            out.append(label(cx, y_fe + 18, meta, size=11, color=QUIET))
+            meta = ' · '.join(b for b in (fmt, rate_s,
+                                          f'{ch} ch' if ch else '') if b)
+            meta_lines = wrap_text(meta, mc(fe_box_w, px_meta))
+            multi(cx, y_fe - 6 + len(name_lines) * 14,
+                  meta_lines, size=11, color=QUIET)
 
             # Stream SG
             out.append(rect(cx, y_sg, fe_box_w, H_tall))
-            out.append(label(cx, y_sg - 22, fe['stream_sg'] + ' subgraph', weight=600))
-            mods = sg_mods(fe['stream_sg'])
-            out.append(label(cx, y_sg - 2, ' → '.join(mods) or '—',
-                             size=11, color=QUIET))
+            out.append(label(cx, y_sg - 24, fe['stream_sg'] + ' subgraph', weight=600))
+            mod_lines = wrap_arrows(sg_mods(fe['stream_sg']), mc(fe_box_w, px_meta))
+            multi(cx, y_sg - 6, mod_lines, size=11, color=QUIET)
 
         # Mixer (one wide, accent)
         out.append(rect(mx_cx, y_mx, g_width, H_small, accent=True))
-        out.append(label(mx_cx, y_mx - 2, g['mixer'] or '(no mixer)', weight=600))
+        mx_name = g['mixer'] or '(no mixer)'
+        mx_lines = wrap_text(mx_name, mc(g_width, px_name))
+        n = len(mx_lines)
+        top_y = y_mx - 2 - (n - 1) * 14 // 2
+        multi(mx_cx, top_y, mx_lines, size=13, color=INK, weight=600)
         info_bits = []
         if fe_n:
             info_bits.append(f'{fe_n} FE' + ('s' if fe_n != 1 else ''))
@@ -544,19 +630,23 @@ def svg_high_level(d: dict, title: str) -> str:
             cx = dev_xs[i]
             sg_to_pos[dev['sg']] = (cx, y_dev - H_tall // 2)
             out.append(rect(cx, y_dev, dev_box_w, H_tall))
-            out.append(label(cx, y_dev - 22, dev['sg'] + ' subgraph', weight=600))
-            dmods = sg_mods(dev['sg'])
-            out.append(label(cx, y_dev - 2, ' → '.join(dmods) or '—',
-                             size=11, color=QUIET))
+            out.append(label(cx, y_dev - 24, dev['sg'] + ' subgraph', weight=600))
+            dmod_lines = wrap_arrows(sg_mods(dev['sg']), mc(dev_box_w, px_meta))
+            multi(cx, y_dev - 6, dmod_lines, size=11, color=QUIET)
             if dev['label']:
-                out.append(label(cx, y_dev + 18, f'via “{dev["label"]}”',
-                                 size=11, color=QUIET))
+                via_lines = wrap_text(f'via “{dev["label"]}”',
+                                      mc(dev_box_w, px_meta))
+                # Place just below the module lines
+                via_y = y_dev - 6 + len(dmod_lines) * 14
+                multi(cx, via_y, via_lines, size=11, color=QUIET)
 
-            out.append(rect(cx, y_be, dev_box_w, H_small))
+            out.append(rect(cx, y_be, dev_box_w, H_small, fill=BE_BG))
             if dev['be_dai']:
-                out.append(label(cx, y_be - 2, dev['be_dai'][0], weight=600))
-                out.append(label(cx, y_be + 18, dev['be_dai'][1],
-                                 size=11, color=QUIET))
+                be_name_lines = wrap_text(dev['be_dai'][0], mc(dev_box_w, px_name))
+                multi(cx, y_be - 6, be_name_lines, size=13, color=INK, weight=600)
+                be_stream_lines = wrap_text(dev['be_dai'][1], mc(dev_box_w, px_meta))
+                multi(cx, y_be - 6 + len(be_name_lines) * 14,
+                      be_stream_lines, size=11, color=QUIET)
             else:
                 out.append(label(cx, y_be, '(no BE DAI)', color=QUIET))
 
@@ -691,7 +781,7 @@ def svg_low_level(d: dict, title: str) -> str:
     GROUP_H_GAP = 40
     GROUP_V_GAP = 56
     MAX_WIDTH = 1400
-    H_small = 50
+    H_small = 60
     ROW_GAP = 20
     MOD_H = 28
     SG_HDR = 32
@@ -704,6 +794,8 @@ def svg_low_level(d: dict, title: str) -> str:
     ACCENT_BG = '#eef4ff'
     ACCENT2 = '#c33a2b'
     MOD_BG = '#f7f9fc'
+    FE_BG = '#f0f3f8'
+    BE_BG = '#f6f3ec'
 
     def mods_for(sg: str, direction: str):
         mods = [n for n in d['subgraphs'].get(sg, [])
@@ -834,10 +926,10 @@ def svg_low_level(d: dict, title: str) -> str:
         fe_box_w = fe_step - LANE_GAP
         dev_box_w = dev_step - LANE_GAP
 
-        # FE row
+        # FE row (neutral blue fill)
         for i, fe in enumerate(g['fes']):
             cx = fe_xs[i]
-            out.append(rect(cx, y_fe, fe_box_w, H_small))
+            out.append(rect(cx, y_fe, fe_box_w, H_small, fill=FE_BG))
             out.append(label(cx, y_fe - 2, fe['fe'], weight=600))
             out.append(label(cx, y_fe + 18, f'FE · {direction}',
                              size=11, color=QUIET))
@@ -855,11 +947,11 @@ def svg_low_level(d: dict, title: str) -> str:
         out.append(label(mx_cx, y_mx + 18, ' · '.join(info_bits),
                          size=11, color=QUIET))
 
-        # Device SG + BE row
+        # Device SG + BE row (BE gets neutral cream fill)
         for i, dev in enumerate(g['devices']):
             cx = dev_xs[i]
             draw_sg_box(dev['sg'], cx, y_dev, device_sg_h, dev_box_w, direction)
-            out.append(rect(cx, y_be, dev_box_w, H_small))
+            out.append(rect(cx, y_be, dev_box_w, H_small, fill=BE_BG))
             if dev['be_dai']:
                 out.append(label(cx, y_be - 2, dev['be_dai'][0], weight=600))
                 out.append(label(cx, y_be + 18, dev['be_dai'][1],
