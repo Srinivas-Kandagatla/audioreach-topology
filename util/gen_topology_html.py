@@ -384,8 +384,9 @@ def svg_high_level(d: dict, title: str) -> str:
     LW = 220
     MARGIN = 24
     LANE_GAP = 20
-    GROUP_H_GAP = 40        # horizontal gap between groups
-    PB_CAP_GAP = 60         # extra gap between playback and capture clusters
+    GROUP_H_GAP = 40        # horizontal gap between groups in a row
+    GROUP_V_GAP = 56        # vertical gap between rows (and pb/cap bands)
+    MAX_WIDTH = 1400        # wrap into a new row once width would exceed this
     H_small = 50
     H_tall = 92
     ROW_GAP = 20
@@ -406,20 +407,25 @@ def svg_high_level(d: dict, title: str) -> str:
 
     pb_metas = [gw(g) for g in pb]
     cap_metas = [gw(g) for g in cap]
+    all_metas = pb_metas + cap_metas
+    cell_w = max((m[3] for m in all_metas), default=400)
+
+    cell_pitch = cell_w + GROUP_H_GAP
+    cols = max(1, (MAX_WIDTH - 2 * MARGIN + GROUP_H_GAP) // cell_pitch)
+    cols = min(cols, max(len(pb), len(cap), 1))
+
+    def row_count(n):
+        return 0 if n == 0 else (n + cols - 1) // cols
+
+    pb_rows = row_count(len(pb))
+    cap_rows = row_count(len(cap))
 
     group_h = (H_small + ROW_GAP + H_tall + ROW_GAP + H_small
                + ROW_GAP + H_tall + ROW_GAP + H_small)
 
-    def cluster_width(metas):
-        if not metas:
-            return 0
-        return sum(m[3] for m in metas) + (len(metas) - 1) * GROUP_H_GAP
-
-    inner = cluster_width(pb_metas) + cluster_width(cap_metas)
-    if pb and cap:
-        inner += PB_CAP_GAP
-    width = max(760, 2 * MARGIN + inner)
-    height = 72 + group_h + 36
+    used_cols = min(cols, max(len(pb), len(cap), 1))
+    width = max(760, 2 * MARGIN + used_cols * cell_w + (used_cols - 1) * GROUP_H_GAP)
+    height = 72 + (pb_rows + cap_rows) * (group_h + GROUP_V_GAP) + 20
 
     def rect(cx, cy, w, h, accent=False):
         return (
@@ -480,12 +486,11 @@ def svg_high_level(d: dict, title: str) -> str:
                      size=11, color=QUIET, anchor='start'))
 
     sg_to_pos = {}  # device subgraph -> (cx, y_dev_top) for control-link arcs
-    y_top = 72
 
-    def draw_group(g, fe_n, dev_n, lanes, g_width, start_x):
+    def draw_group(g, fe_n, dev_n, lanes, g_width, start_x, start_y):
         direction = g['direction']
 
-        y_fe = y_top + H_small // 2
+        y_fe = start_y + H_small // 2
         y_sg = y_fe + H_small // 2 + ROW_GAP + H_tall // 2
         y_mx = y_sg + H_tall // 2 + ROW_GAP + H_small // 2
         y_dev = y_mx + H_small // 2 + ROW_GAP + H_tall // 2
@@ -613,15 +618,18 @@ def svg_high_level(d: dict, title: str) -> str:
             else:
                 out.append(arrv(cx, be_top, dev_bot))
 
-    x_cursor = MARGIN
-    for g, meta in zip(pb, pb_metas):
-        draw_group(g, *meta, start_x=x_cursor)
-        x_cursor += meta[3] + GROUP_H_GAP
-    if pb and cap:
-        x_cursor += PB_CAP_GAP - GROUP_H_GAP
-    for g, meta in zip(cap, cap_metas):
-        draw_group(g, *meta, start_x=x_cursor)
-        x_cursor += meta[3] + GROUP_H_GAP
+    def place(metas, groups_, y_cluster_top):
+        for i, (g, meta) in enumerate(zip(groups_, metas)):
+            r = i // cols
+            c = i % cols
+            x = MARGIN + c * cell_pitch + (cell_w - meta[3]) // 2
+            y = y_cluster_top + r * (group_h + GROUP_V_GAP)
+            draw_group(g, *meta, start_x=x, start_y=y)
+
+    y_cluster = 72
+    place(pb_metas, pb, y_cluster)
+    y_cluster += pb_rows * (group_h + GROUP_V_GAP)
+    place(cap_metas, cap, y_cluster)
 
     # Control-link arcs: dashed line between the two device SG top edges.
     # If the peers live in the same group (close vertically), arc over the
@@ -681,7 +689,8 @@ def svg_low_level(d: dict, title: str) -> str:
     MARGIN = 24
     LANE_GAP = 20
     GROUP_H_GAP = 40
-    PB_CAP_GAP = 60
+    GROUP_V_GAP = 56
+    MAX_WIDTH = 1400
     H_small = 50
     ROW_GAP = 20
     MOD_H = 28
@@ -720,20 +729,24 @@ def svg_low_level(d: dict, title: str) -> str:
 
     pb_metas = [gw(g) for g in pb]
     cap_metas = [gw(g) for g in cap]
+    all_metas = pb_metas + cap_metas
+    cell_w = max((m[3] for m in all_metas), default=400)
+    cell_pitch = cell_w + GROUP_H_GAP
+    cols = max(1, (MAX_WIDTH - 2 * MARGIN + GROUP_H_GAP) // cell_pitch)
+    cols = min(cols, max(len(pb), len(cap), 1))
+
+    def row_count(n):
+        return 0 if n == 0 else (n + cols - 1) // cols
+
+    pb_rows = row_count(len(pb))
+    cap_rows = row_count(len(cap))
 
     group_h = (H_small + ROW_GAP + stream_sg_h + ROW_GAP + H_small
                + ROW_GAP + device_sg_h + ROW_GAP + H_small)
 
-    def cluster_w(metas):
-        if not metas:
-            return 0
-        return sum(m[3] for m in metas) + (len(metas) - 1) * GROUP_H_GAP
-
-    inner = cluster_w(pb_metas) + cluster_w(cap_metas)
-    if pb and cap:
-        inner += PB_CAP_GAP
-    width = max(760, 2 * MARGIN + inner)
-    height = 72 + group_h + 48  # extra for ctl-link labels
+    used_cols = min(cols, max(len(pb), len(cap), 1))
+    width = max(760, 2 * MARGIN + used_cols * cell_w + (used_cols - 1) * GROUP_H_GAP)
+    height = 72 + (pb_rows + cap_rows) * (group_h + GROUP_V_GAP) + 48
 
     def rect(cx, cy, w, h, accent=False, fill=None):
         f = fill or (ACCENT_BG if accent else 'none')
@@ -781,7 +794,6 @@ def svg_low_level(d: dict, title: str) -> str:
                      'routes from each SectionGraph · dashed red: control link',
                      size=11, color=QUIET, anchor='start'))
 
-    y_top = 72
     mod_pos = {}  # (sg, module_name) -> (cx, cy, box_w)
 
     def draw_sg_box(sg: str, cx: int, cy: int, h: int, box_w: int, direction: str):
@@ -805,10 +817,10 @@ def svg_low_level(d: dict, title: str) -> str:
             mod_pos[(sg, mn)] = (cx, mod_cy, mod_w)
             prev_cy = mod_cy
 
-    def draw_group(g, fe_n, dev_n, lanes, g_width, start_x):
+    def draw_group(g, fe_n, dev_n, lanes, g_width, start_x, start_y):
         direction = g['direction']
 
-        y_fe = y_top + H_small // 2
+        y_fe = start_y + H_small // 2
         y_sg = y_fe + H_small // 2 + ROW_GAP + stream_sg_h // 2
         y_mx = y_sg + stream_sg_h // 2 + ROW_GAP + H_small // 2
         y_dev = y_mx + H_small // 2 + ROW_GAP + device_sg_h // 2
@@ -921,15 +933,18 @@ def svg_low_level(d: dict, title: str) -> str:
             else:
                 out.append(arrv(cx, be_top, dev_bot))
 
-    x_cursor = MARGIN
-    for g, meta in zip(pb, pb_metas):
-        draw_group(g, *meta, start_x=x_cursor)
-        x_cursor += meta[3] + GROUP_H_GAP
-    if pb and cap:
-        x_cursor += PB_CAP_GAP - GROUP_H_GAP
-    for g, meta in zip(cap, cap_metas):
-        draw_group(g, *meta, start_x=x_cursor)
-        x_cursor += meta[3] + GROUP_H_GAP
+    def place(metas, groups_, y_cluster_top):
+        for i, (g, meta) in enumerate(zip(groups_, metas)):
+            r = i // cols
+            c = i % cols
+            x = MARGIN + c * cell_pitch + (cell_w - meta[3]) // 2
+            y = y_cluster_top + r * (group_h + GROUP_V_GAP)
+            draw_group(g, *meta, start_x=x, start_y=y)
+
+    y_cluster = 72
+    place(pb_metas, pb, y_cluster)
+    y_cluster += pb_rows * (group_h + GROUP_V_GAP)
+    place(cap_metas, cap, y_cluster)
 
     # Control-link arrows between individual peer modules
     for cl in d['ctl_links']:
