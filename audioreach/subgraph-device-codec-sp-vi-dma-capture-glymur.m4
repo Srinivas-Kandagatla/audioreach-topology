@@ -70,12 +70,15 @@ dnl playback-time GRAPH_OPEN then carries RX+TX+control-link together.
 dnl The subgraph still owns its own module/widget namespace via
 dnl NAME_PREFIX = device106 (set by DEVICE_SG_ADD).
 dnl
-dnl Static format tokens (8kHz/32/4) are picked up by
-dnl audioreach_set_media_format so the TX CODEC_DMA + SP_VI modules get
-dnl their correct VI format even though the opener's cfg is 48kHz/16.
+dnl Because dai-index ($2) != DEVICE_DAI_ID, AR_SUBGRAPH_CONTROL_LINK
+dnl auto-emits AR_TKN_U32_SUB_GRAPH_SAMPLE_RATE / BIT_WIDTH /
+dnl NUM_CHANNELS from the DEVICE_FORMAT / DEVICE_MAX_RATE /
+dnl DEVICE_MAX_CHANNELS values the enclosing DEVICE_SG_ADD declared
+dnl (S32_LE, 8000, 4 for this subgraph). The kernel's
+dnl audioreach_set_media_format uses that in place of the opener's
+dnl 48kHz/S16_LE cfg when configuring the TX CODEC_DMA + SP_VI modules.
 AR_SUBGRAPH_CONTROL_LINK(SG_INDEX, WSA_CODEC_DMA_RX_0, SG_IID_START,
-			 DEVICE_PERF_MODE, DEVICE_DIRECTION, CONT_SENARIO_ID,
-			 8000, 32, 4)
+			 DEVICE_PERF_MODE, DEVICE_DIRECTION, CONT_SENARIO_ID)
 
 AR_CONTAINER(CONTAINER_INDEX, CONT_IID_START, CONT_CAP, CONT_STACK_SIZE, CONT_POSITION, DEVICE_DOMAIN_ID)
 
