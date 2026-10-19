@@ -170,6 +170,7 @@ def extract(sections: dict) -> dict:
         'controls_enum': [],    # (name, [texts])
         'ctl_links': [],        # dict with peer names, iids, intent
         'iid_to_widget': {},
+        'sg_direction': {},     # sg name -> 'playback' | 'capture' (from APM dir)
     }
 
     # FE PCMs + their capability block
@@ -251,6 +252,26 @@ def extract(sections: dict) -> dict:
         txts_ref = c.get('texts', '')
         texts = sections.get('SectionText', {}).get(txts_ref, {}).get('values', [])
         data['controls_enum'].append((name, texts))
+
+    # APM subgraph "direction" — keyed off SCENARIO_ID (1 = playback, 2 =
+    # record) rather than DIRECTION, because every device subgraph in this
+    # topology uses DIRECTION_TX ("0x1") regardless of RX vs TX dataflow;
+    # SCENARIO_ID is the actual playback/record discriminator. Useful for
+    # labeling device SGs that have no FE DAI reaching them — e.g. a VI
+    # capture SG driven purely via a control link from the playback side.
+    for tn, tb in sections.get('SectionVendorTuples', {}).items():
+        m = re.match(r'^(device\d+|stream\d+)\.sub_graph\d+_tuples$', tn)
+        if not m:
+            continue
+        sid_val = _find(tb, 'AR_TKN_U32_SUB_GRAPH_SCENARIO_ID')
+        if sid_val is None:
+            continue
+        try:
+            data['sg_direction'][m.group(1)] = (
+                'playback' if int(str(sid_val).strip('"'), 0) == 1 else 'capture'
+            )
+        except ValueError:
+            pass
 
     # Control links: scan every VendorTuples block for CONTROL_LINK tokens.
     # The conf typically declares the same link twice — once from each peer
@@ -334,12 +355,38 @@ def find_fe_chains(d: dict) -> list:
                         dsg = d['widgets'].get(dst, {}).get('subgraph', '')
                         if dsg and dsg != stream_sg and dsg not in seen_sg:
                             seen_sg.add(dsg)
-                            devs.append({'sg': dsg, 'label': label})
+                            devs.append({'sg': dsg, 'label': label, 'via': 'mixer'})
                     elif direction == 'capture' and dst == mixer:
                         dsg = d['widgets'].get(src, {}).get('subgraph', '')
                         if dsg and dsg != stream_sg and dsg not in seen_sg:
                             seen_sg.add(dsg)
-                            devs.append({'sg': dsg, 'label': label})
+                            devs.append({'sg': dsg, 'label': label, 'via': 'mixer'})
+
+            # Transitive closure: a cross-SG route (e.g. the SP RX side's
+            # supply edge that stands in for the SP<->SP_VI control link)
+            # pulls the TX chain up alongside the RX side. Place it in the
+            # same row for side-by-side rendering, but tag it so draw_group
+            # does NOT trunk-connect the mixer to it — the dashed red
+            # control-link arc is the correct visual.
+            changed = True
+            while changed:
+                changed = False
+                for src, label, dst in d['routes']:
+                    s_sg = d['widgets'].get(src, {}).get('subgraph', '')
+                    d_sg = d['widgets'].get(dst, {}).get('subgraph', '')
+                    if not (s_sg.startswith('device') and d_sg.startswith('device')):
+                        continue
+                    if s_sg == d_sg:
+                        continue
+                    if s_sg in seen_sg and d_sg not in seen_sg:
+                        seen_sg.add(d_sg)
+                        devs.append({'sg': d_sg, 'label': '', 'via': 'ctl_link'})
+                        changed = True
+                    elif d_sg in seen_sg and s_sg not in seen_sg:
+                        seen_sg.add(s_sg)
+                        devs.append({'sg': s_sg, 'label': '', 'via': 'ctl_link'})
+                        changed = True
+
             for dev in devs:
                 be = next(((n, s) for n, _, s, sg in d['be_dais'] if sg == dev['sg']), None)
                 dev['be_dai'] = be
@@ -445,9 +492,27 @@ def svg_high_level(d: dict, title: str) -> str:
     group_h = (H_small + ROW_GAP + H_tall + ROW_GAP + H_small
                + ROW_GAP + H_tall + ROW_GAP + H_small)
 
-    used_cols = min(cols, max(len(pb), len(cap), 1))
+    # Orphan device SGs: participate in a control link but no FE chain reaches
+    # them. The TX side of a DSP-coupled SP/VI pair looks like this once we
+    # stop exposing the VI as a userspace capture source.
+    placed_sgs = {dev['sg'] for g in groups for dev in g['devices']}
+    orphan_sgs = []
+    seen_orphan = set()
+    for cl in d['ctl_links']:
+        for peer in (cl['peer1_name'], cl['peer2_name']):
+            sg = d['widgets'].get(peer, {}).get('subgraph', '')
+            if sg and sg.startswith('device') and sg not in placed_sgs \
+                    and sg not in seen_orphan:
+                seen_orphan.add(sg)
+                orphan_sgs.append(sg)
+
+    orphan_h = H_tall + ROW_GAP + H_small       # device SG + BE DAI
+    orphan_rows = 0 if not orphan_sgs else (len(orphan_sgs) + cols - 1) // cols
+
+    used_cols = min(cols, max(len(pb), len(cap), len(orphan_sgs), 1))
     width = max(760, 2 * MARGIN + used_cols * cell_w + (used_cols - 1) * GROUP_H_GAP)
-    height = 72 + (pb_rows + cap_rows) * (group_h + GROUP_V_GAP) + 20
+    height = (72 + (pb_rows + cap_rows) * (group_h + GROUP_V_GAP)
+              + orphan_rows * (orphan_h + GROUP_V_GAP) + 20)
 
     def rect(cx, cy, w, h, accent=False, fill=None):
         f = fill if fill is not None else (ACCENT_BG if accent else 'none')
@@ -678,32 +743,42 @@ def svg_high_level(d: dict, title: str) -> str:
             else:
                 out.append(arrv(fe_xs[0], mx_top, sg_bot))
 
-        # Arrows: Mixer <-> Device SG, trunk if >1 device
+        # Arrows: Mixer <-> Device SG. The mixer only trunks to devices it
+        # actually drives (via='mixer'); devices pulled in via a control link
+        # (via='ctl_link') sit in the row but get no trunk arrow — the dashed
+        # red control-link arc is their visual connector.
         mx_bot = y_mx + H_small // 2
         dev_top = y_dev - H_tall // 2
         trunk2_y = (mx_bot + dev_top) // 2
-        if dev_n > 1:
+        primary_cxs = [dev_xs[i] for i, dev in enumerate(g['devices'])
+                       if dev.get('via') != 'ctl_link']
+        if len(primary_cxs) > 1:
             if direction == 'playback':
                 out.append(line(mx_cx, mx_bot, mx_cx, trunk2_y))
-                out.append(line(min(dev_xs), trunk2_y, max(dev_xs), trunk2_y))
-                for cx in dev_xs:
+                out.append(line(min(primary_cxs), trunk2_y, max(primary_cxs), trunk2_y))
+                for cx in primary_cxs:
                     out.append(arrv(cx, trunk2_y, dev_top))
             else:
-                for cx in dev_xs:
+                for cx in primary_cxs:
                     out.append(line(cx, dev_top, cx, trunk2_y))
-                out.append(line(min(dev_xs), trunk2_y, max(dev_xs), trunk2_y))
+                out.append(line(min(primary_cxs), trunk2_y, max(primary_cxs), trunk2_y))
                 out.append(arrv(mx_cx, trunk2_y, mx_bot))
-        else:
+        elif len(primary_cxs) == 1:
             if direction == 'playback':
-                out.append(arrv(dev_xs[0], mx_bot, dev_top))
+                out.append(arrv(primary_cxs[0], mx_bot, dev_top))
             else:
-                out.append(arrv(dev_xs[0], dev_top, mx_bot))
+                out.append(arrv(primary_cxs[0], dev_top, mx_bot))
 
-        # Arrows: Device SG <-> BE DAI, one per device lane
+        # Arrows: Device SG <-> BE DAI, direction per device (a TX-side SG
+        # pulled in via control link has its BE sourcing the SG, so flip the
+        # arrow for it).
         dev_bot = y_dev + H_tall // 2
         be_top = y_be - H_small // 2
-        for cx in dev_xs:
-            if direction == 'playback':
+        for i, cx in enumerate(dev_xs):
+            if i >= len(g['devices']):
+                continue
+            dev_dir = d['sg_direction'].get(g['devices'][i]['sg'], direction)
+            if dev_dir == 'playback':
                 out.append(arrv(cx, dev_bot, be_top))
             else:
                 out.append(arrv(cx, be_top, dev_bot))
@@ -720,6 +795,42 @@ def svg_high_level(d: dict, title: str) -> str:
     place(pb_metas, pb, y_cluster)
     y_cluster += pb_rows * (group_h + GROUP_V_GAP)
     place(cap_metas, cap, y_cluster)
+    y_cluster += cap_rows * (group_h + GROUP_V_GAP)
+
+    # Orphan device SG strip: one device SG box + BE DAI per orphan, laid out
+    # on the same column pitch as the main groups. Registers sg_to_pos so
+    # control-link arcs below can anchor on these.
+    for i, sg in enumerate(orphan_sgs):
+        r = i // cols
+        c = i % cols
+        start_x = MARGIN + c * cell_pitch + (cell_w - LW) // 2
+        cx = start_x + LW // 2
+        y_top = y_cluster + r * (orphan_h + GROUP_V_GAP)
+        y_dev = y_top + H_tall // 2
+        y_be = y_dev + H_tall // 2 + ROW_GAP + H_small // 2
+
+        sg_to_pos[sg] = (cx, y_dev - H_tall // 2)
+        out.append(rect(cx, y_dev, LW, H_tall))
+        out.append(label(cx, y_dev - 24, sg + ' subgraph', weight=600))
+        mod_lines = []
+        for m in d['subgraphs'].get(sg, []):
+            if d['widgets'][m]['type'] in ('aif_in', 'aif_out', 'mixer'):
+                continue
+            mod_lines.append(m.rsplit('.', 1)[-1])
+        for j, mn in enumerate(mod_lines):
+            out.append(label(cx, y_dev - 6 + j * 14, mn, size=11, color=QUIET))
+        direction = d['sg_direction'].get(sg, 'capture')
+        out.append(label(cx, y_dev + H_tall // 2 - 6,
+                         f'orphan · {direction} · driven via control link',
+                         size=10, color=QUIET))
+
+        be = next(((n, s) for n, _, s, bsg in d['be_dais'] if bsg == sg), None)
+        out.append(rect(cx, y_be, LW, H_small, fill=BE_BG))
+        if be:
+            out.append(label(cx, y_be - 6, be[0], size=13, color=INK, weight=600))
+            out.append(label(cx, y_be + 10, be[1], size=11, color=QUIET))
+        else:
+            out.append(label(cx, y_be, '(no BE DAI)', color=QUIET))
 
     # Control-link arcs: dashed line between the two device SG top edges.
     # If the peers live in the same group (close vertically), arc over the
@@ -836,9 +947,27 @@ def svg_low_level(d: dict, title: str) -> str:
     group_h = (H_small + ROW_GAP + stream_sg_h + ROW_GAP + H_small
                + ROW_GAP + device_sg_h + ROW_GAP + H_small)
 
-    used_cols = min(cols, max(len(pb), len(cap), 1))
+    # Orphan device SGs — same idea as in the high-level view, but expanded
+    # to the full module stack so the per-module control-link arrow has a
+    # specific peer to point at.
+    placed_sgs = {dev['sg'] for g in groups for dev in g['devices']}
+    orphan_sgs = []
+    seen_orphan = set()
+    for cl in d['ctl_links']:
+        for peer in (cl['peer1_name'], cl['peer2_name']):
+            sg = d['widgets'].get(peer, {}).get('subgraph', '')
+            if sg and sg.startswith('device') and sg not in placed_sgs \
+                    and sg not in seen_orphan:
+                seen_orphan.add(sg)
+                orphan_sgs.append(sg)
+
+    orphan_h = device_sg_h + ROW_GAP + H_small
+    orphan_rows = 0 if not orphan_sgs else (len(orphan_sgs) + cols - 1) // cols
+
+    used_cols = min(cols, max(len(pb), len(cap), len(orphan_sgs), 1))
     width = max(760, 2 * MARGIN + used_cols * cell_w + (used_cols - 1) * GROUP_H_GAP)
-    height = 72 + (pb_rows + cap_rows) * (group_h + GROUP_V_GAP) + 48
+    height = (72 + (pb_rows + cap_rows) * (group_h + GROUP_V_GAP)
+              + orphan_rows * (orphan_h + GROUP_V_GAP) + 48)
 
     def rect(cx, cy, w, h, accent=False, fill=None):
         f = fill or (ACCENT_BG if accent else 'none')
@@ -947,10 +1076,13 @@ def svg_low_level(d: dict, title: str) -> str:
         out.append(label(mx_cx, y_mx + 18, ' · '.join(info_bits),
                          size=11, color=QUIET))
 
-        # Device SG + BE row (BE gets neutral cream fill)
+        # Device SG + BE row (BE gets neutral cream fill). A TX-side SG
+        # pulled in via a control link uses its own direction for module
+        # order so the chain reads naturally.
         for i, dev in enumerate(g['devices']):
             cx = dev_xs[i]
-            draw_sg_box(dev['sg'], cx, y_dev, device_sg_h, dev_box_w, direction)
+            dev_dir = d['sg_direction'].get(dev['sg'], direction)
+            draw_sg_box(dev['sg'], cx, y_dev, device_sg_h, dev_box_w, dev_dir)
             out.append(rect(cx, y_be, dev_box_w, H_small, fill=BE_BG))
             if dev['be_dai']:
                 out.append(label(cx, y_be - 2, dev['be_dai'][0], weight=600))
@@ -1000,27 +1132,32 @@ def svg_low_level(d: dict, title: str) -> str:
         mx_bot = y_mx + H_small // 2
         dev_top = y_dev - device_sg_h // 2
         trunk2_y = (mx_bot + dev_top) // 2
-        if dev_n > 1:
+        primary_cxs = [dev_xs[i] for i, dev in enumerate(g['devices'])
+                       if dev.get('via') != 'ctl_link']
+        if len(primary_cxs) > 1:
             if direction == 'playback':
                 out.append(line(mx_cx, mx_bot, mx_cx, trunk2_y))
-                out.append(line(min(dev_xs), trunk2_y, max(dev_xs), trunk2_y))
-                for cx in dev_xs:
+                out.append(line(min(primary_cxs), trunk2_y, max(primary_cxs), trunk2_y))
+                for cx in primary_cxs:
                     out.append(arrv(cx, trunk2_y, dev_top))
             else:
-                for cx in dev_xs:
+                for cx in primary_cxs:
                     out.append(line(cx, dev_top, cx, trunk2_y))
-                out.append(line(min(dev_xs), trunk2_y, max(dev_xs), trunk2_y))
+                out.append(line(min(primary_cxs), trunk2_y, max(primary_cxs), trunk2_y))
                 out.append(arrv(mx_cx, trunk2_y, mx_bot))
-        else:
+        elif len(primary_cxs) == 1:
             if direction == 'playback':
-                out.append(arrv(dev_xs[0], mx_bot, dev_top))
+                out.append(arrv(primary_cxs[0], mx_bot, dev_top))
             else:
-                out.append(arrv(dev_xs[0], dev_top, mx_bot))
+                out.append(arrv(primary_cxs[0], dev_top, mx_bot))
 
         dev_bot = y_dev + device_sg_h // 2
         be_top = y_be - H_small // 2
-        for cx in dev_xs:
-            if direction == 'playback':
+        for i, cx in enumerate(dev_xs):
+            if i >= len(g['devices']):
+                continue
+            dev_dir = d['sg_direction'].get(g['devices'][i]['sg'], direction)
+            if dev_dir == 'playback':
                 out.append(arrv(cx, dev_bot, be_top))
             else:
                 out.append(arrv(cx, be_top, dev_bot))
@@ -1037,6 +1174,47 @@ def svg_low_level(d: dict, title: str) -> str:
     place(pb_metas, pb, y_cluster)
     y_cluster += pb_rows * (group_h + GROUP_V_GAP)
     place(cap_metas, cap, y_cluster)
+    y_cluster += cap_rows * (group_h + GROUP_V_GAP)
+
+    # Orphan device SG strip (expanded, with per-module boxes so the dashed
+    # control-link arrow lands on the specific SP_VI module). Routes already
+    # in d['routes'] that connect two modules inside this orphan SG are drawn
+    # here too, matching the main draw_group behaviour.
+    for i, sg in enumerate(orphan_sgs):
+        r = i // cols
+        c = i % cols
+        start_x = MARGIN + c * cell_pitch + (cell_w - LW) // 2
+        cx = start_x + LW // 2
+        y_top = y_cluster + r * (orphan_h + GROUP_V_GAP)
+        y_dev = y_top + device_sg_h // 2
+        y_be = y_dev + device_sg_h // 2 + ROW_GAP + H_small // 2
+        direction = d['sg_direction'].get(sg, 'capture')
+        draw_sg_box(sg, cx, y_dev, device_sg_h, LW, direction)
+
+        for src, _lbl, dst in d['routes']:
+            if (sg, src) in mod_pos and (sg, dst) in mod_pos:
+                sx, sy, _ = mod_pos[(sg, src)]
+                _, dy, _ = mod_pos[(sg, dst)]
+                out.append(arrv(sx, sy + MOD_H // 2 - 2, dy - MOD_H // 2 + 2))
+
+        be = next(((n, s) for n, _, s, bsg in d['be_dais'] if bsg == sg), None)
+        out.append(rect(cx, y_be, LW, H_small, fill=BE_BG))
+        if be:
+            out.append(label(cx, y_be - 2, be[0], weight=600))
+            out.append(label(cx, y_be + 18, be[1], size=11, color=QUIET))
+        else:
+            out.append(label(cx, y_be, '(no BE DAI)', color=QUIET))
+
+        dev_bot = y_dev + device_sg_h // 2
+        be_top = y_be - H_small // 2
+        if direction == 'playback':
+            out.append(arrv(cx, dev_bot, be_top))
+        else:
+            out.append(arrv(cx, be_top, dev_bot))
+
+        out.append(label(cx, y_top - 4,
+                         f'orphan device subgraph · driven via control link',
+                         size=10, color=QUIET))
 
     # Control-link arrows between individual peer modules
     for cl in d['ctl_links']:
