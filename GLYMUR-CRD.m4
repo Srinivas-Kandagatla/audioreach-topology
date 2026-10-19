@@ -63,6 +63,13 @@ SPEAKER_PROTECTION_OPERATION_MODE_CTRL()
 SPEAKER_PROTECTION_R0T0_CTRL()
 
 dnl STREAM_DEVICE_CAPTURE_MIXER(stream-index, kcontro1, kcontrol2... kcontrolN)
-STREAM_DEVICE_CAPTURE_MIXER(FRONTEND_DAI_MULTIMEDIA2, ``VA_CODEC_DMA_TX_0'', ``WSA_CODEC_DMA_TX_0'')
+dnl MM2 only exposes the VA capture; WSA VI capture is no longer a
+dnl userspace source. The VI subgraph is co-opened via DAI_INDEX=105
+dnl sharing with the WSA playback graph (see
+dnl audioreach/subgraph-device-codec-sp-vi-dma-capture-glymur.m4) and
+dnl its codec DAIs ride on the WSA Playback BE as mixed-direction
+dnl codec DAIs (snd_soc_dai_link::multi_direction_codecs on the kernel
+dnl side).
+STREAM_DEVICE_CAPTURE_MIXER(FRONTEND_DAI_MULTIMEDIA2, ``VA_CODEC_DMA_TX_0'')
 dnl STREAM_DEVICE_CAPTURE_ROUTE(stream-index, mixer-name, route1, route2.. routeN)
-STREAM_DEVICE_CAPTURE_ROUTE(FRONTEND_DAI_MULTIMEDIA2, ``MultiMedia2 Mixer'', ``VA_CODEC_DMA_TX_0, device110.logger1'', ``WSA_CODEC_DMA_TX_0, device106.sp_vi1'')
+STREAM_DEVICE_CAPTURE_ROUTE(FRONTEND_DAI_MULTIMEDIA2, ``MultiMedia2 Mixer'', ``VA_CODEC_DMA_TX_0, device110.logger1'')
