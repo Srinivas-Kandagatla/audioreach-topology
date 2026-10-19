@@ -476,18 +476,6 @@ def svg_high_level(d: dict, title: str) -> str:
 
     pb_metas = [gw(g) for g in pb]
     cap_metas = [gw(g) for g in cap]
-    all_metas = pb_metas + cap_metas
-    cell_w = max((m[3] for m in all_metas), default=400)
-
-    cell_pitch = cell_w + GROUP_H_GAP
-    cols = max(1, (MAX_WIDTH - 2 * MARGIN + GROUP_H_GAP) // cell_pitch)
-    cols = min(cols, max(len(pb), len(cap), 1))
-
-    def row_count(n):
-        return 0 if n == 0 else (n + cols - 1) // cols
-
-    pb_rows = row_count(len(pb))
-    cap_rows = row_count(len(cap))
 
     group_h = (H_small + ROW_GAP + H_tall + ROW_GAP + H_small
                + ROW_GAP + H_tall + ROW_GAP + H_small)
@@ -507,12 +495,55 @@ def svg_high_level(d: dict, title: str) -> str:
                 orphan_sgs.append(sg)
 
     orphan_h = H_tall + ROW_GAP + H_small       # device SG + BE DAI
-    orphan_rows = 0 if not orphan_sgs else (len(orphan_sgs) + cols - 1) // cols
 
-    used_cols = min(cols, max(len(pb), len(cap), len(orphan_sgs), 1))
-    width = max(760, 2 * MARGIN + used_cols * cell_w + (used_cols - 1) * GROUP_H_GAP)
-    height = (72 + (pb_rows + cap_rows) * (group_h + GROUP_V_GAP)
-              + orphan_rows * (orphan_h + GROUP_V_GAP) + 20)
+    # Variable-width horizontal packing. Fill PB then CAP groups left-to-right;
+    # wrap to a new row only when the next group would exceed MAX_WIDTH. One
+    # wide group no longer forces every other group to a separate row, and a
+    # topology with one PB + one CAP mixer places them side-by-side instead of
+    # stacking vertically.
+    all_groups = list(zip(pb, pb_metas)) + list(zip(cap, cap_metas))
+    inner_w_cap = MAX_WIDTH - 2 * MARGIN
+    row_layout = []  # list of rows, each a list of (g, meta)
+    cur_row = []
+    cur_w = 0
+    for g, meta in all_groups:
+        gw_val = meta[3]
+        extra = gw_val if not cur_row else gw_val + GROUP_H_GAP
+        if cur_w + extra > inner_w_cap and cur_row:
+            row_layout.append(cur_row)
+            cur_row = []
+            cur_w = 0
+            extra = gw_val
+        cur_row.append((g, meta))
+        cur_w += extra
+    if cur_row:
+        row_layout.append(cur_row)
+
+    def row_width(row):
+        return sum(m[3] for _, m in row) + max(0, len(row) - 1) * GROUP_H_GAP
+
+    # Orphans get their own strip of rows below the main groups.
+    orphan_row_layout = []
+    cur_row = []
+    cur_w = 0
+    for sg in orphan_sgs:
+        extra = LW if not cur_row else LW + GROUP_H_GAP
+        if cur_w + extra > inner_w_cap and cur_row:
+            orphan_row_layout.append(cur_row)
+            cur_row = []
+            cur_w = 0
+            extra = LW
+        cur_row.append(sg)
+        cur_w += extra
+    if cur_row:
+        orphan_row_layout.append(cur_row)
+
+    max_main_w = max((row_width(r) for r in row_layout), default=0)
+    max_orphan_w = max((len(r) * LW + max(0, len(r) - 1) * GROUP_H_GAP
+                       for r in orphan_row_layout), default=0)
+    width = max(760, 2 * MARGIN + max(max_main_w, max_orphan_w))
+    height = (72 + len(row_layout) * (group_h + GROUP_V_GAP)
+              + len(orphan_row_layout) * (orphan_h + GROUP_V_GAP) + 20)
 
     def rect(cx, cy, w, h, accent=False, fill=None):
         f = fill if fill is not None else (ACCENT_BG if accent else 'none')
@@ -783,54 +814,51 @@ def svg_high_level(d: dict, title: str) -> str:
             else:
                 out.append(arrv(cx, be_top, dev_bot))
 
-    def place(metas, groups_, y_cluster_top):
-        for i, (g, meta) in enumerate(zip(groups_, metas)):
-            r = i // cols
-            c = i % cols
-            x = MARGIN + c * cell_pitch + (cell_w - meta[3]) // 2
-            y = y_cluster_top + r * (group_h + GROUP_V_GAP)
-            draw_group(g, *meta, start_x=x, start_y=y)
-
+    # Walk the packed rows and place each group at its own width.
     y_cluster = 72
-    place(pb_metas, pb, y_cluster)
-    y_cluster += pb_rows * (group_h + GROUP_V_GAP)
-    place(cap_metas, cap, y_cluster)
-    y_cluster += cap_rows * (group_h + GROUP_V_GAP)
+    for ri, row in enumerate(row_layout):
+        y = y_cluster + ri * (group_h + GROUP_V_GAP)
+        rw = row_width(row)
+        x = MARGIN + max(0, (width - 2 * MARGIN - rw) // 2)
+        for g, meta in row:
+            draw_group(g, *meta, start_x=x, start_y=y)
+            x += meta[3] + GROUP_H_GAP
+    y_cluster += len(row_layout) * (group_h + GROUP_V_GAP)
 
     # Orphan device SG strip: one device SG box + BE DAI per orphan, laid out
-    # on the same column pitch as the main groups. Registers sg_to_pos so
-    # control-link arcs below can anchor on these.
-    for i, sg in enumerate(orphan_sgs):
-        r = i // cols
-        c = i % cols
-        start_x = MARGIN + c * cell_pitch + (cell_w - LW) // 2
-        cx = start_x + LW // 2
-        y_top = y_cluster + r * (orphan_h + GROUP_V_GAP)
+    # using the same variable-width horizontal packing. Registers sg_to_pos
+    # so control-link arcs below can anchor on these.
+    for ri, row_sgs in enumerate(orphan_row_layout):
+        y_top = y_cluster + ri * (orphan_h + GROUP_V_GAP)
         y_dev = y_top + H_tall // 2
         y_be = y_dev + H_tall // 2 + ROW_GAP + H_small // 2
+        rw = len(row_sgs) * LW + max(0, len(row_sgs) - 1) * GROUP_H_GAP
+        x = MARGIN + max(0, (width - 2 * MARGIN - rw) // 2)
+        for sg in row_sgs:
+            cx = x + LW // 2
+            sg_to_pos[sg] = (cx, y_dev - H_tall // 2)
+            out.append(rect(cx, y_dev, LW, H_tall))
+            out.append(label(cx, y_dev - 24, sg + ' subgraph', weight=600))
+            mod_lines = []
+            for m in d['subgraphs'].get(sg, []):
+                if d['widgets'][m]['type'] in ('aif_in', 'aif_out', 'mixer'):
+                    continue
+                mod_lines.append(m.rsplit('.', 1)[-1])
+            for j, mn in enumerate(mod_lines):
+                out.append(label(cx, y_dev - 6 + j * 14, mn, size=11, color=QUIET))
+            direction = d['sg_direction'].get(sg, 'capture')
+            out.append(label(cx, y_dev + H_tall // 2 - 6,
+                             f'orphan · {direction} · driven via control link',
+                             size=10, color=QUIET))
 
-        sg_to_pos[sg] = (cx, y_dev - H_tall // 2)
-        out.append(rect(cx, y_dev, LW, H_tall))
-        out.append(label(cx, y_dev - 24, sg + ' subgraph', weight=600))
-        mod_lines = []
-        for m in d['subgraphs'].get(sg, []):
-            if d['widgets'][m]['type'] in ('aif_in', 'aif_out', 'mixer'):
-                continue
-            mod_lines.append(m.rsplit('.', 1)[-1])
-        for j, mn in enumerate(mod_lines):
-            out.append(label(cx, y_dev - 6 + j * 14, mn, size=11, color=QUIET))
-        direction = d['sg_direction'].get(sg, 'capture')
-        out.append(label(cx, y_dev + H_tall // 2 - 6,
-                         f'orphan · {direction} · driven via control link',
-                         size=10, color=QUIET))
-
-        be = next(((n, s) for n, _, s, bsg in d['be_dais'] if bsg == sg), None)
-        out.append(rect(cx, y_be, LW, H_small, fill=BE_BG))
-        if be:
-            out.append(label(cx, y_be - 6, be[0], size=13, color=INK, weight=600))
-            out.append(label(cx, y_be + 10, be[1], size=11, color=QUIET))
-        else:
-            out.append(label(cx, y_be, '(no BE DAI)', color=QUIET))
+            be = next(((n, s) for n, _, s, bsg in d['be_dais'] if bsg == sg), None)
+            out.append(rect(cx, y_be, LW, H_small, fill=BE_BG))
+            if be:
+                out.append(label(cx, y_be - 6, be[0], size=13, color=INK, weight=600))
+                out.append(label(cx, y_be + 10, be[1], size=11, color=QUIET))
+            else:
+                out.append(label(cx, y_be, '(no BE DAI)', color=QUIET))
+            x += LW + GROUP_H_GAP
 
     # Control-link arcs: dashed line between the two device SG top edges.
     # If the peers live in the same group (close vertically), arc over the
@@ -932,17 +960,6 @@ def svg_low_level(d: dict, title: str) -> str:
 
     pb_metas = [gw(g) for g in pb]
     cap_metas = [gw(g) for g in cap]
-    all_metas = pb_metas + cap_metas
-    cell_w = max((m[3] for m in all_metas), default=400)
-    cell_pitch = cell_w + GROUP_H_GAP
-    cols = max(1, (MAX_WIDTH - 2 * MARGIN + GROUP_H_GAP) // cell_pitch)
-    cols = min(cols, max(len(pb), len(cap), 1))
-
-    def row_count(n):
-        return 0 if n == 0 else (n + cols - 1) // cols
-
-    pb_rows = row_count(len(pb))
-    cap_rows = row_count(len(cap))
 
     group_h = (H_small + ROW_GAP + stream_sg_h + ROW_GAP + H_small
                + ROW_GAP + device_sg_h + ROW_GAP + H_small)
@@ -962,12 +979,50 @@ def svg_low_level(d: dict, title: str) -> str:
                 orphan_sgs.append(sg)
 
     orphan_h = device_sg_h + ROW_GAP + H_small
-    orphan_rows = 0 if not orphan_sgs else (len(orphan_sgs) + cols - 1) // cols
 
-    used_cols = min(cols, max(len(pb), len(cap), len(orphan_sgs), 1))
-    width = max(760, 2 * MARGIN + used_cols * cell_w + (used_cols - 1) * GROUP_H_GAP)
-    height = (72 + (pb_rows + cap_rows) * (group_h + GROUP_V_GAP)
-              + orphan_rows * (orphan_h + GROUP_V_GAP) + 48)
+    # Variable-width horizontal packing (same scheme as svg_high_level).
+    all_groups = list(zip(pb, pb_metas)) + list(zip(cap, cap_metas))
+    inner_w_cap = MAX_WIDTH - 2 * MARGIN
+    row_layout = []
+    cur_row = []
+    cur_w = 0
+    for g, meta in all_groups:
+        gw_val = meta[3]
+        extra = gw_val if not cur_row else gw_val + GROUP_H_GAP
+        if cur_w + extra > inner_w_cap and cur_row:
+            row_layout.append(cur_row)
+            cur_row = []
+            cur_w = 0
+            extra = gw_val
+        cur_row.append((g, meta))
+        cur_w += extra
+    if cur_row:
+        row_layout.append(cur_row)
+
+    def row_width(row):
+        return sum(m[3] for _, m in row) + max(0, len(row) - 1) * GROUP_H_GAP
+
+    orphan_row_layout = []
+    cur_row = []
+    cur_w = 0
+    for sg in orphan_sgs:
+        extra = LW if not cur_row else LW + GROUP_H_GAP
+        if cur_w + extra > inner_w_cap and cur_row:
+            orphan_row_layout.append(cur_row)
+            cur_row = []
+            cur_w = 0
+            extra = LW
+        cur_row.append(sg)
+        cur_w += extra
+    if cur_row:
+        orphan_row_layout.append(cur_row)
+
+    max_main_w = max((row_width(r) for r in row_layout), default=0)
+    max_orphan_w = max((len(r) * LW + max(0, len(r) - 1) * GROUP_H_GAP
+                       for r in orphan_row_layout), default=0)
+    width = max(760, 2 * MARGIN + max(max_main_w, max_orphan_w))
+    height = (72 + len(row_layout) * (group_h + GROUP_V_GAP)
+              + len(orphan_row_layout) * (orphan_h + GROUP_V_GAP) + 48)
 
     def rect(cx, cy, w, h, accent=False, fill=None):
         f = fill or (ACCENT_BG if accent else 'none')
@@ -1162,59 +1217,57 @@ def svg_low_level(d: dict, title: str) -> str:
             else:
                 out.append(arrv(cx, be_top, dev_bot))
 
-    def place(metas, groups_, y_cluster_top):
-        for i, (g, meta) in enumerate(zip(groups_, metas)):
-            r = i // cols
-            c = i % cols
-            x = MARGIN + c * cell_pitch + (cell_w - meta[3]) // 2
-            y = y_cluster_top + r * (group_h + GROUP_V_GAP)
-            draw_group(g, *meta, start_x=x, start_y=y)
-
+    # Walk the packed rows and place each group at its own width.
     y_cluster = 72
-    place(pb_metas, pb, y_cluster)
-    y_cluster += pb_rows * (group_h + GROUP_V_GAP)
-    place(cap_metas, cap, y_cluster)
-    y_cluster += cap_rows * (group_h + GROUP_V_GAP)
+    for ri, row in enumerate(row_layout):
+        y = y_cluster + ri * (group_h + GROUP_V_GAP)
+        rw = row_width(row)
+        x = MARGIN + max(0, (width - 2 * MARGIN - rw) // 2)
+        for g, meta in row:
+            draw_group(g, *meta, start_x=x, start_y=y)
+            x += meta[3] + GROUP_H_GAP
+    y_cluster += len(row_layout) * (group_h + GROUP_V_GAP)
 
     # Orphan device SG strip (expanded, with per-module boxes so the dashed
     # control-link arrow lands on the specific SP_VI module). Routes already
     # in d['routes'] that connect two modules inside this orphan SG are drawn
     # here too, matching the main draw_group behaviour.
-    for i, sg in enumerate(orphan_sgs):
-        r = i // cols
-        c = i % cols
-        start_x = MARGIN + c * cell_pitch + (cell_w - LW) // 2
-        cx = start_x + LW // 2
-        y_top = y_cluster + r * (orphan_h + GROUP_V_GAP)
+    for ri, row_sgs in enumerate(orphan_row_layout):
+        y_top = y_cluster + ri * (orphan_h + GROUP_V_GAP)
         y_dev = y_top + device_sg_h // 2
         y_be = y_dev + device_sg_h // 2 + ROW_GAP + H_small // 2
-        direction = d['sg_direction'].get(sg, 'capture')
-        draw_sg_box(sg, cx, y_dev, device_sg_h, LW, direction)
+        rw = len(row_sgs) * LW + max(0, len(row_sgs) - 1) * GROUP_H_GAP
+        x = MARGIN + max(0, (width - 2 * MARGIN - rw) // 2)
+        for sg in row_sgs:
+            cx = x + LW // 2
+            direction = d['sg_direction'].get(sg, 'capture')
+            draw_sg_box(sg, cx, y_dev, device_sg_h, LW, direction)
 
-        for src, _lbl, dst in d['routes']:
-            if (sg, src) in mod_pos and (sg, dst) in mod_pos:
-                sx, sy, _ = mod_pos[(sg, src)]
-                _, dy, _ = mod_pos[(sg, dst)]
-                out.append(arrv(sx, sy + MOD_H // 2 - 2, dy - MOD_H // 2 + 2))
+            for src, _lbl, dst in d['routes']:
+                if (sg, src) in mod_pos and (sg, dst) in mod_pos:
+                    sx, sy, _ = mod_pos[(sg, src)]
+                    _, dy, _ = mod_pos[(sg, dst)]
+                    out.append(arrv(sx, sy + MOD_H // 2 - 2, dy - MOD_H // 2 + 2))
 
-        be = next(((n, s) for n, _, s, bsg in d['be_dais'] if bsg == sg), None)
-        out.append(rect(cx, y_be, LW, H_small, fill=BE_BG))
-        if be:
-            out.append(label(cx, y_be - 2, be[0], weight=600))
-            out.append(label(cx, y_be + 18, be[1], size=11, color=QUIET))
-        else:
-            out.append(label(cx, y_be, '(no BE DAI)', color=QUIET))
+            be = next(((n, s) for n, _, s, bsg in d['be_dais'] if bsg == sg), None)
+            out.append(rect(cx, y_be, LW, H_small, fill=BE_BG))
+            if be:
+                out.append(label(cx, y_be - 2, be[0], weight=600))
+                out.append(label(cx, y_be + 18, be[1], size=11, color=QUIET))
+            else:
+                out.append(label(cx, y_be, '(no BE DAI)', color=QUIET))
 
-        dev_bot = y_dev + device_sg_h // 2
-        be_top = y_be - H_small // 2
-        if direction == 'playback':
-            out.append(arrv(cx, dev_bot, be_top))
-        else:
-            out.append(arrv(cx, be_top, dev_bot))
+            dev_bot = y_dev + device_sg_h // 2
+            be_top = y_be - H_small // 2
+            if direction == 'playback':
+                out.append(arrv(cx, dev_bot, be_top))
+            else:
+                out.append(arrv(cx, be_top, dev_bot))
 
-        out.append(label(cx, y_top - 4,
-                         f'orphan device subgraph · driven via control link',
-                         size=10, color=QUIET))
+            out.append(label(cx, y_top - 4,
+                             'orphan device subgraph · driven via control link',
+                             size=10, color=QUIET))
+            x += LW + GROUP_H_GAP
 
     # Control-link arrows between individual peer modules
     for cl in d['ctl_links']:
