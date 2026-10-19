@@ -1,7 +1,15 @@
 # Copyright, Linaro Ltd, 2025
 # SPDX-License-Identifier: BSD-3-Clause
 include(`util/util.m4') dnl
-dnl AR_SUBGRAPH_CONTROL_LINK(index, graph-id, sub-graph-id, perf-mode, dir, sid)
+dnl AR_SUBGRAPH_CONTROL_LINK(index, graph-id, sub-graph-id, perf-mode, dir, sid,
+dnl                          [static-sample-rate, static-bit-width, static-num-channels])
+dnl
+dnl The optional trailing three args attach a static media format to the
+dnl subgraph via AR_TKN_U32_SUB_GRAPH_SAMPLE_RATE / BIT_WIDTH /
+dnl NUM_CHANNELS. The kernel audioreach driver uses this when configuring
+dnl CODEC_DMA / SP_VI modules inside this subgraph, in place of the
+dnl opening DAI's cfg. Needed when a subgraph is co-opened via DAI_INDEX
+dnl sharing and the opener's cfg is for a different port.
 define(`AR_SUBGRAPH_CONTROL_LINK',
 `'
 `SectionVendorTuples."NAME_PREFIX.sub_graph$1_tuples" {'
@@ -12,6 +20,9 @@ define(`AR_SUBGRAPH_CONTROL_LINK',
 `                AR_TKN_U32_SUB_GRAPH_PERF_MODE STR($4)'
 `                AR_TKN_U32_SUB_GRAPH_DIRECTION STR($5)'
 `                AR_TKN_U32_SUB_GRAPH_SCENARIO_ID STR($6)'
+`ifelse(`$7', `', `', `                AR_TKN_U32_SUB_GRAPH_SAMPLE_RATE STR($7)
+                AR_TKN_U32_SUB_GRAPH_BIT_WIDTH STR($8)
+                AR_TKN_U32_SUB_GRAPH_NUM_CHANNELS STR($9)')'
 `        }'
 `}'
 `'

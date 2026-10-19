@@ -64,13 +64,26 @@ define(`DEVICE_CAPTURE_SP_VI_ROUTE',
 dnl AR_CONTROL_LINK(index, iid, peer1-iid, peer1-port, peer2-iid, peer2-port, intent0, intent1, intent2, intent3)
 AR_CONTROL_LINK(SG_INDEX, CONTROL_LINK_IID, SP_VI_MODULE_IID, 0x80000000, SP_MODULE_IID, 0x80000000, 0x8001204, 0, 0, 0)
 
-AR_SUBGRAPH_CONTROL_LINK(SG_INDEX, DEVICE_DAI_ID, SG_IID_START, DEVICE_PERF_MODE, DEVICE_DIRECTION, CONT_SENARIO_ID)
+dnl Advertise this (VI capture) subgraph under the WSA RX side's DAI id so
+dnl the kernel groups both subgraphs into graph_info[105]. A single MM1
+dnl playback-time GRAPH_OPEN then carries RX+TX+control-link together.
+dnl The subgraph still owns its own module/widget namespace via
+dnl NAME_PREFIX = device106 (set by DEVICE_SG_ADD).
+dnl
+dnl Static format tokens (8kHz/32/4) are picked up by
+dnl audioreach_set_media_format so the TX CODEC_DMA + SP_VI modules get
+dnl their correct VI format even though the opener's cfg is 48kHz/16.
+AR_SUBGRAPH_CONTROL_LINK(SG_INDEX, WSA_CODEC_DMA_RX_0, SG_IID_START,
+			 DEVICE_PERF_MODE, DEVICE_DIRECTION, CONT_SENARIO_ID,
+			 8000, 32, 4)
 
 AR_CONTAINER(CONTAINER_INDEX, CONT_IID_START, CONT_CAP, CONT_STACK_SIZE, CONT_POSITION, DEVICE_DOMAIN_ID)
 
 AR_MODULE_CODEC_DMA_TX(MOD_INDEX, SG_INDEX, CONTAINER_INDEX, CDC_DMA_MODULE_IID, 0, 1, 1, 2, DEVICE_INTF_TYPE, DEVICE_INTF_INDEX, DEVICE_DATA_FORMAT, `DEVICE_NAME', LOG_MODULE_IID)
 AR_MODULE_LOG(MOD_INDEX, SG_INDEX, CONTAINER_INDEX, LOG_MODULE_IID, 1, 1, 1, 2, 0x00001586, 1, 0, SP_VI_MODULE_IID)
 AR_MODULE_SP_VI_GLYMUR(MOD_INDEX, SG_INDEX, CONTAINER_INDEX, SP_VI_MODULE_IID, 1, 1, 4, 1, 1, 2, NONE_IID)
-dnl kcontrol switch
-DEVICE_CAPTURE_MIXER(SG_INDEX, `DEVICE_NAME')
+dnl No DEVICE_CAPTURE_MIXER here: no userspace capture PCM for VI. The
+dnl VI subgraph is co-opened through DAI_INDEX=105 sharing (see the
+dnl AR_SUBGRAPH_CONTROL_LINK call above) and its codec DAIs are driven
+dnl via the WSA Playback BE's multi_direction_codecs flag.
 DEVICE_CAPTURE_SP_VI_ROUTE(MOD_INDEX, `DEVICE_NAME')
