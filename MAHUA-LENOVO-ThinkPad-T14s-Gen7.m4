@@ -58,20 +58,20 @@ dnl DEVICE_SG_ADD(stream, stream-dai-id, stream-index,
 dnl	format, min-rate, max-rate, min-channels, max-channels,
 dnl	interface-type, interface-index, data-format,
 dnl	sg-iid-start, cont-iid-start, mod-iid-start
-dnl WSA Playback (speaker protection, 2 speakers). Reuses the glymur
-dnl 4-speaker SP modules; the DSP only drives the two slots the hardware
-dnl exposes, the other two stay inert.
-DEVICE_SG_ADD(audioreach/subgraph-device-codec-sp-dma-playback-glymur.m4, `WSA_CODEC_DMA_RX_0', WSA_CODEC_DMA_RX_0,
+dnl WSA Playback (speaker protection, 2 speakers). Uses the T14s-specific
+dnl SP module cfg (2-speaker static+dynamic VI blob and per-speaker
+dnl electrical params for the T14s WSA8845 pair).
+DEVICE_SG_ADD(audioreach/subgraph-device-codec-sp-dma-playback-t14s.m4, `WSA_CODEC_DMA_RX_0', WSA_CODEC_DMA_RX_0,
 	`S16_LE', 48000, 48000, 2, 2,
 	LPAIF_INTF_TYPE_WSA, CODEC_INTF_IDX_RX0, 0, DATA_FORMAT_FIXED_POINT,
 	0x00004005, 0x00004005, 0x00006050)
 dnl
-dnl WSA VI Capture (SP_VI). Folded into graph_info[WSA_CODEC_DMA_RX_0]
-dnl so a single MM1 playback-time GRAPH_OPEN carries both the RX and VI
-dnl subgraphs. VI runs at 8 kHz / S32_LE; the glymur SP_VI subgraph file
-dnl carries the fold+static-format wiring via AR_TKN_DAI_INDEX =
-dnl WSA_CODEC_DMA_RX_0.
-DEVICE_SG_ADD(audioreach/subgraph-device-codec-sp-vi-dma-capture-glymur.m4, `WSA_CODEC_DMA_TX_0', WSA_CODEC_DMA_TX_0,
+dnl WSA VI Capture (SP_VI, 2 speakers). Folded into
+dnl graph_info[WSA_CODEC_DMA_RX_0] so a single MM1 playback-time
+dnl GRAPH_OPEN carries both the RX and VI subgraphs. VI runs at
+dnl 8 kHz / S32_LE; the T14s SP_VI subgraph file carries the
+dnl fold+static-format wiring via AR_TKN_DAI_INDEX = WSA_CODEC_DMA_RX_0.
+DEVICE_SG_ADD(audioreach/subgraph-device-codec-sp-vi-dma-capture-t14s.m4, `WSA_CODEC_DMA_TX_0', WSA_CODEC_DMA_TX_0,
 	`S32_LE', 8000, 8000, 1, 2,
 	LPAIF_INTF_TYPE_WSA, CODEC_INTF_IDX_TX0, 0, DATA_FORMAT_FIXED_POINT,
 	0x00004019, 0x00004019, 0x00006190)
