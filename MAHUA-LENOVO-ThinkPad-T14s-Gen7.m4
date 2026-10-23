@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Lenovo ThinkPad T14s Gen 7 (Snapdragon X2 Elite / Mahua, Lenovo 22A7/22A8):
-# 2x WSA8845 speakers, 2x DMIC, WCD headphone jack (RX_CODEC_DMA_RX_0) and
-# headset mic (TX_CODEC_DMA_TX_3), plus two DisplayPort sinks (DP0, DP1).
+# 2x WSA8845 speakers (speaker protection enabled), 2x DMIC, WCD headphone
+# jack (RX_CODEC_DMA_RX_0) and headset mic (TX_CODEC_DMA_TX_3), plus two
+# DisplayPort sinks (DP0, DP1).
 # Based on GLYMUR-CRD.m4
 # Copyright, Linaro Ltd, 2023
 #
@@ -57,11 +58,23 @@ dnl DEVICE_SG_ADD(stream, stream-dai-id, stream-index,
 dnl	format, min-rate, max-rate, min-channels, max-channels,
 dnl	interface-type, interface-index, data-format,
 dnl	sg-iid-start, cont-iid-start, mod-iid-start
-dnl WSA Playback
-DEVICE_SG_ADD(audioreach/subgraph-device-codec-dma-playback.m4, `WSA_CODEC_DMA_RX_0', WSA_CODEC_DMA_RX_0,
-	`S16_LE', 48000, 48000, 2, 4,
+dnl WSA Playback (speaker protection, 2 speakers). Reuses the glymur
+dnl 4-speaker SP modules; the DSP only drives the two slots the hardware
+dnl exposes, the other two stay inert.
+DEVICE_SG_ADD(audioreach/subgraph-device-codec-sp-dma-playback-glymur.m4, `WSA_CODEC_DMA_RX_0', WSA_CODEC_DMA_RX_0,
+	`S16_LE', 48000, 48000, 2, 2,
 	LPAIF_INTF_TYPE_WSA, CODEC_INTF_IDX_RX0, 0, DATA_FORMAT_FIXED_POINT,
 	0x00004005, 0x00004005, 0x00006050)
+dnl
+dnl WSA VI Capture (SP_VI). Folded into graph_info[WSA_CODEC_DMA_RX_0]
+dnl so a single MM1 playback-time GRAPH_OPEN carries both the RX and VI
+dnl subgraphs. VI runs at 8 kHz / S32_LE; the glymur SP_VI subgraph file
+dnl carries the fold+static-format wiring via AR_TKN_DAI_INDEX =
+dnl WSA_CODEC_DMA_RX_0.
+DEVICE_SG_ADD(audioreach/subgraph-device-codec-sp-vi-dma-capture-glymur.m4, `WSA_CODEC_DMA_TX_0', WSA_CODEC_DMA_TX_0,
+	`S32_LE', 8000, 8000, 1, 2,
+	LPAIF_INTF_TYPE_WSA, CODEC_INTF_IDX_TX0, 0, DATA_FORMAT_FIXED_POINT,
+	0x00004019, 0x00004019, 0x00006190)
 dnl
 dnl WCDRX Headphone Playback
 DEVICE_SG_ADD(audioreach/subgraph-device-codec-dma-playback.m4, `RX_CODEC_DMA_RX_0', RX_CODEC_DMA_RX_0,
@@ -105,7 +118,17 @@ STREAM_DEVICE_PLAYBACK_ROUTE(RX_CODEC_DMA_RX_0, ``RX_CODEC_DMA_RX_0 Audio Mixer'
 STREAM_DEVICE_PLAYBACK_ROUTE(DISPLAY_PORT_RX_0, ``DISPLAY_PORT_RX_0 Audio Mixer'', ``MultiMedia1, stream0.logger1'', ``MultiMedia3, stream2.logger1'', ``MultiMedia4, stream3.logger1'', ``MultiMedia5, stream4.logger1'')
 STREAM_DEVICE_PLAYBACK_ROUTE(DISPLAY_PORT_RX_1, ``DISPLAY_PORT_RX_1 Audio Mixer'', ``MultiMedia1, stream0.logger1'', ``MultiMedia3, stream2.logger1'', ``MultiMedia4, stream3.logger1'', ``MultiMedia5, stream4.logger1'')
 
+SPEAKER_PROTECTION_OPERATION_MODE_CTRL()
+SPEAKER_PROTECTION_R0T0_CTRL()
+
 dnl STREAM_DEVICE_CAPTURE_MIXER(stream-index, kcontrol1, kcontrol2... kcontrolN)
+dnl
+dnl WSA VI capture is not a userspace source; the VI subgraph is
+dnl co-opened via DAI_INDEX=105 sharing with the WSA playback graph
+dnl (see audioreach/subgraph-device-codec-sp-vi-dma-capture-glymur.m4)
+dnl and its codec DAIs ride on the WSA Playback BE as mixed-direction
+dnl codec DAIs (snd_soc_dai_link::multi_direction_codecs on the kernel
+dnl side).
 STREAM_DEVICE_CAPTURE_MIXER(FRONTEND_DAI_MULTIMEDIA2, ``VA_CODEC_DMA_TX_0'')
 STREAM_DEVICE_CAPTURE_MIXER(FRONTEND_DAI_MULTIMEDIA6, ``TX_CODEC_DMA_TX_3'')
 dnl STREAM_DEVICE_CAPTURE_ROUTE(stream-index, mixer-name, route1, route2.. routeN)
