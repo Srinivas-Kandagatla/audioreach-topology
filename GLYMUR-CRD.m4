@@ -44,7 +44,7 @@ dnl 	format, min-rate, max-rate, min-channels, max-channels,
 dnl	interface-type, interface-index, data-format,
 dnl	sg-iid-start, cont-iid-start, mod-iid-start
 dnl WSA Playback (speaker protection RX)
-DEVICE_SG_ADD(audioreach/subgraph-device-codec-sp-dma-playback-glymur.m4, `WSA_CODEC_DMA_RX_0', WSA_CODEC_DMA_RX_0,
+DEVICE_SG_ADD(audioreach/subgraph-device-codec-sp-dma-playback-4spkr.m4, `WSA_CODEC_DMA_RX_0', WSA_CODEC_DMA_RX_0,
 	`S16_LE', 48000, 48000, 2, 4,
 	LPAIF_INTF_TYPE_WSA, CODEC_INTF_IDX_RX0, 0, DATA_FORMAT_FIXED_POINT,
 	0x00004005, 0x00004005, 0x00006050)
@@ -54,7 +54,7 @@ dnl so a single MM1 playback-time GRAPH_OPEN carries both the RX and VI
 dnl subgraphs. VI runs at 8 kHz / S32_LE; the glymur SP_VI subgraph file
 dnl carries the fold+static-format wiring via AR_TKN_DAI_INDEX =
 dnl WSA_CODEC_DMA_RX_0.
-DEVICE_SG_ADD(audioreach/subgraph-device-codec-sp-vi-dma-capture-glymur.m4, `WSA_CODEC_DMA_TX_0', WSA_CODEC_DMA_TX_0,
+DEVICE_SG_ADD(audioreach/subgraph-device-codec-sp-vi-dma-capture-4spkr.m4, `WSA_CODEC_DMA_TX_0', WSA_CODEC_DMA_TX_0,
 	`S32_LE', 8000, 8000, 1, 4,
 	LPAIF_INTF_TYPE_WSA, CODEC_INTF_IDX_TX0, 0, DATA_FORMAT_FIXED_POINT,
 	0x00004019, 0x00004019, 0x00006190)
@@ -114,7 +114,7 @@ dnl STREAM_DEVICE_CAPTURE_MIXER(stream-index, kcontro1, kcontrol2... kcontrolN)
 dnl
 dnl WSA VI capture is not a userspace source; the VI subgraph is
 dnl co-opened via DAI_INDEX=105 sharing with the WSA playback graph
-dnl (see audioreach/subgraph-device-codec-sp-vi-dma-capture-glymur.m4)
+dnl (see audioreach/subgraph-device-codec-sp-vi-dma-capture-4spkr.m4)
 dnl and its codec DAIs ride on the WSA Playback BE as mixed-direction
 dnl codec DAIs (snd_soc_dai_link::multi_direction_codecs on the kernel
 dnl side).

@@ -1,7 +1,7 @@
 # Copyright, Linaro Ltd, 2025
 # SPDX-License-Identifier: BSD-3-Clause
 include(`util/util.m4') dnl
-dnl AR_MODULE_SP_GLYMUR(index, sgidx, container-idx, iid, maxip-ports, max-op-ports, in-ports, out-ports, src-port, dst-port, dst-iid)
+dnl AR_MODULE_SP_4SPKR(index, sgidx, container-idx, iid, maxip-ports, max-op-ports, in-ports, out-ports, src-port, dst-port, dst-iid)
 dnl
 dnl glymur-crd (WSA8845 / wsa884x) speaker protection static cfg blob, generated
 dnl from the SPv5 module data dump (sp_vi_data/SP_v5_Module.txt) by
@@ -28,7 +28,7 @@ dnl To regenerate:
 dnl   python3 gen_blob.py ../SP_v5_Module.txt -o sp_v5_glymur_blob \
 dnl           --iid 0x00004026 --tplg-header
 dnl then replace each 0x00004026 with SP_IID_HEX`'.
-define(`AR_MODULE_SP_GLYMUR',
+define(`AR_MODULE_SP_4SPKR',
 `'dnl
 dnl The blob's records carry the instance id as a bare hex word, so format $4
 dnl (a decimal iid from eval()) as eight hex digits.

@@ -61,7 +61,7 @@ dnl	sg-iid-start, cont-iid-start, mod-iid-start
 dnl WSA Playback (speaker protection, 2 speakers). Uses the T14s-specific
 dnl SP module cfg (2-speaker static+dynamic VI blob and per-speaker
 dnl electrical params for the T14s WSA8845 pair).
-DEVICE_SG_ADD(audioreach/subgraph-device-codec-sp-dma-playback-t14s.m4, `WSA_CODEC_DMA_RX_0', WSA_CODEC_DMA_RX_0,
+DEVICE_SG_ADD(audioreach/subgraph-device-codec-sp-dma-playback-2spkr.m4, `WSA_CODEC_DMA_RX_0', WSA_CODEC_DMA_RX_0,
 	`S16_LE', 48000, 48000, 2, 2,
 	LPAIF_INTF_TYPE_WSA, CODEC_INTF_IDX_RX0, 0, DATA_FORMAT_FIXED_POINT,
 	0x00004005, 0x00004005, 0x00006050)
@@ -71,7 +71,7 @@ dnl graph_info[WSA_CODEC_DMA_RX_0] so a single MM1 playback-time
 dnl GRAPH_OPEN carries both the RX and VI subgraphs. VI runs at
 dnl 8 kHz / S32_LE; the T14s SP_VI subgraph file carries the
 dnl fold+static-format wiring via AR_TKN_DAI_INDEX = WSA_CODEC_DMA_RX_0.
-DEVICE_SG_ADD(audioreach/subgraph-device-codec-sp-vi-dma-capture-t14s.m4, `WSA_CODEC_DMA_TX_0', WSA_CODEC_DMA_TX_0,
+DEVICE_SG_ADD(audioreach/subgraph-device-codec-sp-vi-dma-capture-2spkr.m4, `WSA_CODEC_DMA_TX_0', WSA_CODEC_DMA_TX_0,
 	`S32_LE', 8000, 8000, 1, 2,
 	LPAIF_INTF_TYPE_WSA, CODEC_INTF_IDX_TX0, 0, DATA_FORMAT_FIXED_POINT,
 	0x00004019, 0x00004019, 0x00006190)
@@ -125,7 +125,7 @@ dnl STREAM_DEVICE_CAPTURE_MIXER(stream-index, kcontrol1, kcontrol2... kcontrolN)
 dnl
 dnl WSA VI capture is not a userspace source; the VI subgraph is
 dnl co-opened via DAI_INDEX=105 sharing with the WSA playback graph
-dnl (see audioreach/subgraph-device-codec-sp-vi-dma-capture-glymur.m4)
+dnl (see audioreach/subgraph-device-codec-sp-vi-dma-capture-4spkr.m4)
 dnl and its codec DAIs ride on the WSA Playback BE as mixed-direction
 dnl codec DAIs (snd_soc_dai_link::multi_direction_codecs on the kernel
 dnl side).

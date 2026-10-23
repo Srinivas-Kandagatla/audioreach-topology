@@ -1,7 +1,7 @@
 # Copyright, Linaro Ltd, 2025
 # SPDX-License-Identifier: BSD-3-Clause
 include(`util/util.m4') dnl
-dnl AR_MODULE_SP_VI_T14S(index, sgidx, container-idx, iid, maxip-ports, max-op-ports, in-ports, out-ports, src-port, dst-port, dst-iid)
+dnl AR_MODULE_SP_VI_2SPKR(index, sgidx, container-idx, iid, maxip-ports, max-op-ports, in-ports, out-ports, src-port, dst-port, dst-iid)
 dnl
 dnl glymur-crd (WSA8845 / wsa884x) speaker protection VI cfg blob, 2 speakers.
 dnl
@@ -28,7 +28,7 @@ dnl
 dnl The records' module_instance_id is SP_VI_IID_HEX, which expands to the iid
 dnl passed in as $4 (0x6191 here, SP_VI_MODULE_IID = MOD_IID_START + 1)
 dnl formatted as eight hex digits, the same scheme
-dnl module_speaker_protection_glymur.m4 uses for the SP module. An earlier
+dnl module_speaker_protection_4spkr.m4 uses for the SP module. An earlier
 dnl revision of the kernel built the dynamic cfg param in C and sent it at
 dnl graph open (audioreach_sp_vi_set_dynamic_cfg(), with a 0x00004032
 dnl placeholder iid patched at runtime); both are gone, so the blob has to be
@@ -106,7 +106,7 @@ dnl   python3 gen_sp_blob.py --module vi ../../param_2_channels/vi_2_channels.tx
 dnl           -o sp_vi_v5_glymur_2ch_blob
 dnl then splice the words list in with splice_blob.py; the generated .m4
 dnl already carries SP_VI_IID_HEX rather than a literal iid.
-define(`AR_MODULE_SP_VI_T14S',
+define(`AR_MODULE_SP_VI_2SPKR',
 `'dnl
 dnl The blob's records carry the instance id as a bare hex word, so format $4
 dnl (a decimal iid from eval()) as eight hex digits.

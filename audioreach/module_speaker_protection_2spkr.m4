@@ -1,7 +1,7 @@
 # Copyright, Linaro Ltd, 2025
 # SPDX-License-Identifier: BSD-3-Clause
 include(`util/util.m4') dnl
-dnl AR_MODULE_SP_T14S(index, sgidx, container-idx, iid, maxip-ports, max-op-ports, in-ports, out-ports, src-port, dst-port, dst-iid)
+dnl AR_MODULE_SP_2SPKR(index, sgidx, container-idx, iid, maxip-ports, max-op-ports, in-ports, out-ports, src-port, dst-port, dst-iid)
 dnl
 dnl glymur-crd (WSA8845 / wsa884x) speaker protection static cfg blob,
 dnl 2 speakers, generated from the 2 channel calibration dump
@@ -30,7 +30,7 @@ dnl              error_code) followed by param_size bytes of payload, zero
 dnl              padded up to an 8 byte boundary -- except a param_size of 2,
 dnl              which emits no payload word at all and lets the next record
 dnl              start immediately. Note this differs from the VI blob in
-dnl              module_speaker_protection_vi_glymur.m4, which packs its
+dnl              module_speaker_protection_vi_4spkr.m4, which packs its
 dnl              records with no padding whatsoever.
 dnl
 dnl PARAM_ID_SP_STATIC_CFG's num_speakers (payload word 3, offset 8) is 2 here
@@ -51,7 +51,7 @@ dnl   python3 gen_sp_blob.py --module sp ../../param_2_channels/sp_2_channels.tx
 dnl           -o sp_v5_glymur_2ch_blob
 dnl then splice the words list in with splice_blob.py; the generated .m4
 dnl already carries SP_IID_HEX rather than a literal iid.
-define(`AR_MODULE_SP_T14S',
+define(`AR_MODULE_SP_2SPKR',
 `'dnl
 dnl The blob's records carry the instance id as a bare hex word, so format $4
 dnl (a decimal iid from eval()) as eight hex digits.
