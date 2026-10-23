@@ -14,9 +14,12 @@ include(`audioreach/tokens.m4')
 # | [WR_SH] -> [PCM DEC] -> [PCM CONV] -> [LOG]  |- Kcontrol
 # |______________________________________________|
 #
-dnl Playback MultiMedia1
+dnl Playback MultiMedia1 - 4-speaker SP: needs the FE to accept 4 channels
+dnl so an sp-calib opener (aplay -c 4) does not get silently downmixed to
+dnl 2 by plughw, which would then propagate as num_speakers=2 into the
+dnl runtime SP_VI cfg.
 STREAM_SG_PCM_ADD(audioreach/subgraph-stream-vol-playback.m4, FRONTEND_DAI_MULTIMEDIA1,
-	`S16_LE', 48000, 48000, 2, 2,
+	`S16_LE', 48000, 48000, 2, 4,
 	0x00004001, 0x00004001, 0x00006001, `110000')
 dnl Playback MultiMedia2
 STREAM_SG_PCM_ADD(audioreach/subgraph-stream-vol-playback.m4, FRONTEND_DAI_MULTIMEDIA2,
@@ -89,11 +92,13 @@ DEVICE_SG_ADD(audioreach/subgraph-device-codec-dma-capture.m4, `VA_CODEC_DMA_TX_
 	LPAIF_INTF_TYPE_VA, CODEC_INTF_IDX_TX0, 0, DATA_FORMAT_FIXED_POINT,
 	0x00004018, 0x00004018, 0x00006180)
 dnl
-dnl WCDTX Capture (analog audio in via WCD9385)
+dnl WCDTX Capture (analog audio in via WCD9385). SP_VI already owns
+dnl 0x00004019 / 0x00006190 for WSA_CODEC_DMA_TX_0, so use the next
+dnl free slot.
 DEVICE_SG_ADD(audioreach/subgraph-device-codec-dma-capture.m4, `TX_CODEC_DMA_TX_3', TX_CODEC_DMA_TX_3,
 	`S16_LE', 48000, 48000, 1, 2,
 	LPAIF_INTF_TYPE_RXTX, CODEC_INTF_IDX_TX3, 0, DATA_FORMAT_FIXED_POINT,
-	0x00004019, 0x00004019, 0x00006190)
+	0x0000401a, 0x0000401a, 0x000061a0)
 
 STREAM_DEVICE_PLAYBACK_MIXER(WSA_CODEC_DMA_RX_0, ``WSA_CODEC_DMA_RX_0'', ``MultiMedia1'', ``MultiMedia2'')
 STREAM_DEVICE_PLAYBACK_MIXER(RX_CODEC_DMA_RX_0, ``RX_CODEC_DMA_RX_0'', ``MultiMedia1'', ``MultiMedia2'')
